@@ -1,40 +1,60 @@
-# Use Miniconda (Lightweight, Pre-built binaries)
-FROM continuumio/miniconda3
+# STAGE 1: The Builder (Compiles the heavy stuff)
+FROM python:3.10-slim as builder
 
-# 1. Set Working Directory
-WORKDIR /app
-
-# 2. Install System compilers
+# 1. Install compilers
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
+    libopenblas-dev \
+    liblapack-dev \
+    libx11-dev \
+    libgtk-3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Force single-core compilation (Prevents RAM crash)
+ENV CMAKE_BUILD_PARALLEL_LEVEL=1
+
+# 3. Install dlib & face_recognition to a local user folder
+# This takes ~10-15 minutes but WILL NOT hang like Conda
+RUN pip install --user --no-cache-dir dlib face_recognition
+
+
+# STAGE 2: The Final Image (Small & Fast)
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# 1. Install runtime libraries for OpenCV
+RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Install Heavy AI Libraries via Conda (PRE-BUILT BINARIES)
-# We install these FIRST so they are definitely present before pip runs
-RUN conda install -y -c conda-forge dlib face_recognition numpy pandas
+# 2. Copy the compiled AI libraries from the Builder Stage
+COPY --from=builder /root/.local /root/.local
 
-# 4. Install Web & App Libraries via Pip (Hardcoded List)
-# We list them here directly to ensure NO "ghost" dependencies from cached files
-RUN pip install --no-cache-dir \
+# 3. Add the local bin to PATH
+ENV PATH=/root/.local/bin:$PATH
+
+# 4. Install the rest of the lightweight libraries
+# We list them here directly to ensure clean installation
+RUN pip install --no-cache-dir --user \
     fastapi==0.111.0 \
     uvicorn[standard]==0.30.1 \
     python-multipart==0.0.9 \
     sqlmodel==0.0.19 \
+    numpy==1.26.4 \
     opencv-python-headless==4.10.0.82 \
     python-jose==3.3.0 \
     passlib[bcrypt]==1.7.4 \
     bcrypt==4.0.1 \
+    pandas==2.2.2 \
     openpyxl==3.1.5 \
     requests==2.32.3
 
-# 5. Copy Application Code
+# 5. Copy your code
 COPY . .
 
-# 6. Expose Port
+# 6. Run it
 EXPOSE 8000
-
-# 7. Start Command
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
