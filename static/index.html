@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upasthiti | Smart Attendance</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --secondary: #64748b;
+            --bg: #f1f5f9;
+            --surface: #ffffff;
+            --text: #0f172a;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* AUTH SCREEN */
+        #auth-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); position: absolute; z-index: 100; transition: opacity 0.5s; }
+        .auth-card { background: var(--surface); padding: 40px; border-radius: 16px; width: 350px; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); }
+        .auth-card h1 { margin: 0 0 20px 0; text-align: center; color: var(--primary); }
+        .auth-toggle { text-align: center; margin-top: 15px; font-size: 0.9em; cursor: pointer; color: var(--secondary); }
+        .auth-toggle:hover { text-decoration: underline; }
+
+        /* DASHBOARD LAYOUT */
+        #app-container { display: flex; width: 100%; height: 100%; opacity: 0; transition: opacity 0.5s; }
+        aside { width: 260px; background: #1e293b; color: white; display: flex; flex-direction: column; padding: 20px; box-shadow: 4px 0 10px rgba(0,0,0,0.1); }
+        aside h2 { margin-bottom: 40px; font-weight: 700; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px; }
+        
+        .nav-item { padding: 12px 16px; margin-bottom: 8px; cursor: pointer; border-radius: 8px; color: #94a3b8; font-weight: 500; transition: all 0.2s; display: flex; align-items: center; gap: 10px; }
+        .nav-item:hover { background: #334155; color: white; }
+        .nav-item.active { background: var(--primary); color: white; }
+
+        main { flex: 1; padding: 40px; overflow-y: auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .header h2 { font-size: 1.8rem; font-weight: 600; margin: 0; }
+        
+        /* CARDS & FORMS */
+        .card { background: var(--surface); padding: 25px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 20px; }
+        input, select { width: 100%; padding: 12px; margin: 8px 0 16px; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; font-family: inherit; transition: border 0.2s; }
+        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+        
+        button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: transform 0.1s; }
+        button:active { transform: scale(0.98); }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-success { background: var(--success); color: white; }
+        
+        /* STATS */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: var(--surface); padding: 20px; border-radius: 12px; box-shadow: var(--shadow); border-left: 5px solid var(--primary); }
+        .stat-card h3 { font-size: 2.5rem; margin: 0; color: var(--text); }
+        .stat-card p { margin: 5px 0 0; color: var(--secondary); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* QR AREA */
+        #qr-container { display: flex; flex-direction: column; align-items: center; padding: 40px; background: #f8fafc; border-radius: 16px; border: 2px dashed #cbd5e1; }
+        #timer { font-size: 0.9rem; color: var(--secondary); margin-top: 15px; }
+
+        /* UTILS */
+        .hidden { display: none !important; }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #334155; color: white; padding: 12px 24px; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); opacity: 0; transition: opacity 0.3s; z-index: 1000; }
+        .toast.show { opacity: 1; }
+        .toast.error { background: var(--danger); }
+        .toast.success { background: var(--success); }
+    </style>
+</head>
+<body>
+
+    <div id="toast" class="toast">Message</div>
+
+    <div id="auth-container">
+        <div id="form-login" class="auth-card">
+            <h1>Upasthiti</h1>
+            <p style="text-align: center; color: var(--secondary); margin-bottom: 20px;">Instructor Portal</p>
+            <input type="text" id="login-user" placeholder="Username" />
+            <input type="password" id="login-pass" placeholder="Password" />
+            <button class="btn-primary" onclick="handleLogin()">Log In</button>
+            <div class="auth-toggle" onclick="toggleAuth('signup')">New Institute? Register here</div>
+        </div>
+        
+        <div id="form-signup" class="auth-card hidden">
+            <h1>Register</h1>
+            <p style="text-align: center; color: var(--secondary);">Create New Institute Account</p>
+            <input type="text" id="reg-inst" placeholder="Institute Name (e.g. IIT Delhi)" />
+            <input type="text" id="reg-user" placeholder="Username" />
+            <input type="password" id="reg-pass" placeholder="Password" />
+            <button class="btn-primary" onclick="handleSignup()">Create Account</button>
+            <div class="auth-toggle" onclick="toggleAuth('login')">Already have an account? Log In</div>
+        </div>
+    </div>
+
+    <div id="app-container" class="hidden">
+        <aside>
+            <h2>Upasthiti</h2>
+            <div class="nav-item active" onclick="nav('dashboard')" id="nav-dashboard">Dashboard</div>
+            <div class="nav-item" onclick="nav('attendance')" id="nav-attendance">Live Class</div>
+            <div class="nav-item" onclick="nav('students')" id="nav-students">Manage Students</div>
+            <div style="flex:1"></div>
+            <div class="nav-item" onclick="logout()">Logout</div>
+        </aside>
+
+        <main>
+            <div id="view-dashboard">
+                <div class="header">
+                    <h2>Welcome, <span id="dash-inst-name" style="color: var(--primary);">Instructor</span></h2>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3 id="stat-students">0</h3>
+                        <p>Total Students</p>
+                    </div>
+                    <div class="stat-card" style="border-left-color: var(--success);">
+                        <h3 id="stat-courses">0</h3>
+                        <p>Active Courses</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Your Courses</h3>
+                    <ul id="course-list" style="color: var(--secondary); padding-left: 20px;"></ul>
+                </div>
+            </div>
+
+            <div id="view-attendance" class="hidden">
+                <div class="header"><h2>Live Attendance</h2></div>
+                
+                <div id="att-setup" class="card">
+                    <h3>Start New Session</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        <input type="text" id="att-course" placeholder="Course Name (e.g. CS101)" />
+                        <input type="text" id="att-batch" placeholder="Batch (e.g. Batch A)" />
+                        <input type="date" id="att-date" />
+                    </div>
+                    <button class="btn-primary" onclick="startClass()">Generate QR Code</button>
+                </div>
+
+                <div id="att-active" class="card hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 id="active-title">Class Active</h3>
+                        <button class="btn-success" style="width: auto; padding: 8px 20px;" onclick="downloadExcel()">Download Sheet</button>
+                    </div>
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                    
+                    <div id="qr-container">
+                        <div id="qrcode"></div>
+                        <div id="timer">Refreshing code every 5 seconds...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-students" class="hidden">
+                <div class="header"><h2>Student Management</h2></div>
+                
+                <div class="card">
+                    <h3>Add New Student</h3>
+                    <input type="text" id="s-roll" placeholder="Roll Number" />
+                    <input type="text" id="s-name" placeholder="Full Name" />
+                    <label style="font-size: 0.9rem; color: var(--secondary);">Upload Face Photo</label>
+                    <input type="file" id="s-photo" accept="image/*" />
+                    <button class="btn-primary" onclick="addStudent()">Register Student</button>
+                </div>
+
+                <div class="card">
+                    <h3>Bulk Import</h3>
+                    <p style="color: var(--secondary); font-size: 0.9rem;">Upload CSV/Excel with columns: <b>roll_no, name, image_link</b></p>
+                    <input type="file" id="bulk-file" accept=".csv,.xlsx" />
+                    <button class="btn-primary" style="background: #475569;" onclick="bulkUpload()">Upload File</button>
+                    <div id="bulk-log" style="margin-top: 10px; font-size: 0.85rem; color: var(--secondary); white-space: pre-wrap;"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- STATE ---
+        let token = localStorage.getItem('token');
+        let currentSessionId = null;
+
+        // --- INIT ---
+        if(token) { showApp(); }
+        document.getElementById('att-date').valueAsDate = new Date();
+
+        // --- UI UTILS ---
+        function toast(msg, type='normal') {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.className = `toast show ${type}`;
+            setTimeout(() => t.className = 'toast', 3000);
+        }
+
+        function toggleAuth(view) {
+            if(view === 'signup') {
+                document.getElementById('form-login').classList.add('hidden');
+                document.getElementById('form-signup').classList.remove('hidden');
+            } else {
+                document.getElementById('form-login').classList.remove('hidden');
+                document.getElementById('form-signup').classList.add('hidden');
+            }
+        }
+
+        function nav(view) {
+            ['dashboard', 'attendance', 'students'].forEach(v => {
+                document.getElementById('view-'+v).classList.add('hidden');
+                document.getElementById('nav-'+v).classList.remove('active');
+            });
+            document.getElementById('view-'+view).classList.remove('hidden');
+            document.getElementById('nav-'+view).classList.add('active');
+            if(view === 'dashboard') loadStats();
+        }
+
+        function showApp() {
+            document.getElementById('auth-container').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('auth-container').classList.add('hidden');
+                document.getElementById('app-container').classList.remove('hidden');
+                document.getElementById('app-container').style.opacity = '1';
+                loadStats();
+            }, 500);
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            location.reload();
+        }
+
+        // --- API CALLS ---
+        
+        async function handleLogin() {
+            const u = document.getElementById('login-user').value;
+            const p = document.getElementById('login-pass').value;
+            const fd = new URLSearchParams(); fd.append('username', u); fd.append('password', p);
+            
+            try {
+                const res = await fetch('/token', { method: 'POST', body: fd, headers: {'Content-Type': 'application/x-www-form-urlencoded'} });
+                if(res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem('token', data.access_token);
+                    token = data.access_token;
+                    showApp();
+                } else toast("Invalid Credentials", "error");
+            } catch(e) { toast("Server Error", "error"); }
+        }
+
+        async function handleSignup() {
+            const inst = document.getElementById('reg-inst').value;
+            const u = document.getElementById('reg-user').value;
+            const p = document.getElementById('reg-pass').value;
+
+            if(!inst || !u || !p) return toast("Fill all fields", "error");
+
+            const res = await fetch('/api/instructor/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ institute_name: inst, username: u, password: p })
+            });
+            
+            if(res.ok) {
+                toast("Registration Successful! Please Login.", "success");
+                toggleAuth('login');
+            } else {
+                const d = await res.json();
+                toast(d.detail || "Error", "error");
+            }
+        }
+
+        async function loadStats() {
+            const res = await fetch('/api/dashboard_stats', { headers: { 'Authorization': `Bearer ${token}` } });
+            if(res.ok) {
+                const data = await res.json();
+                document.getElementById('dash-inst-name').innerText = data.institute;
+                document.getElementById('stat-students').innerText = data.total_students;
+                document.getElementById('stat-courses').innerText = data.active_courses;
+                
+                const ul = document.getElementById('course-list');
+                ul.innerHTML = "";
+                data.course_list.forEach(c => ul.innerHTML += `<li>${c}</li>`);
+            }
+        }
+
+        async function addStudent() {
+            const roll = document.getElementById('s-roll').value;
+            const name = document.getElementById('s-name').value;
+            const file = document.getElementById('s-photo').files[0];
+
+            if(!roll || !name || !file) return toast("Fill all fields", "error");
+
+            const reader = new FileReader();
+            reader.onload = async function() {
+                const res = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rollNumber: roll, name: name, photoBase64: reader.result })
+                });
+                if(res.ok) {
+                    toast("Student Added!", "success");
+                    document.getElementById('s-roll').value = "";
+                    document.getElementById('s-name').value = "";
+                } else {
+                    const d = await res.json();
+                    toast(d.detail, "error");
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function startClass() {
+            const c = document.getElementById('att-course').value;
+            const b = document.getElementById('att-batch').value;
+            const d = document.getElementById('att-date').value;
+
+            const res = await fetch('/api/start_class', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ course_name: c, batch_name: b, date_str: d })
+            });
+
+            if(res.ok) {
+                const data = await res.json();
+                currentSessionId = data.session_id;
+                document.getElementById('att-setup').classList.add('hidden');
+                document.getElementById('att-active').classList.remove('hidden');
+                document.getElementById('active-title').innerText = `${c} - ${b}`;
+                
+                updateQR();
+                setInterval(updateQR, 5000);
+            }
+        }
+
+        async function updateQR() {
+            const res = await fetch('/api/get_qr', { headers: { 'Authorization': `Bearer ${token}` } });
+            if(res.ok) {
+                const data = await res.json();
+                document.getElementById("qrcode").innerHTML = "";
+                new QRCode(document.getElementById("qrcode"), { text: data.qrToken, width: 250, height: 250 });
+            }
+        }
+
+        function downloadExcel() {
+            if(!currentSessionId) return;
+            fetch(`/api/download_excel/${currentSessionId}`, { headers: { 'Authorization': `Bearer ${token}` } })
+            .then(res => res.blob())
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "Attendance.xlsx";
+                a.click();
+            });
+        }
+    </script>
+</body>
+</html>
