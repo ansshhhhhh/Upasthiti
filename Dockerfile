@@ -24,12 +24,13 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # 1. Install runtime libraries for OpenCV & Dlib
-# FIX IS HERE: Added 'libopenblas-dev' and 'liblapack-dev' to runtime
+# FIX IS HERE: Added 'libpng16-16' to the list
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
     libopenblas-dev \
     liblapack-dev \
+    libpng16-16 \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Copy the compiled AI libraries from the Builder Stage
