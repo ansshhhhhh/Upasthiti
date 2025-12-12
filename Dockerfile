@@ -25,8 +25,9 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # 1. Install runtime libraries for OpenCV
+# CRITICAL FIX: Changed 'libgl1-mesa-glx' to 'libgl1' for Debian Bookworm support
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -37,7 +38,6 @@ COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
 # 4. Install the rest of the lightweight libraries
-# We list them here directly to ensure clean installation
 RUN pip install --no-cache-dir --user \
     fastapi==0.111.0 \
     uvicorn[standard]==0.30.1 \
