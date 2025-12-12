@@ -13,3 +13,4 @@ requests==2.32.3
 # NEW LIGHTWEIGHT REPLACEMENT
 deepface==0.0.93
 tf-keras==2.17.0
+scipy>=1.13.0
