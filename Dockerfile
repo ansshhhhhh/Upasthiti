@@ -1,44 +1,33 @@
-# Use Python 3.10 Slim
-FROM python:3.10-slim
+# Use Miniconda (Lightweight version of Anaconda)
+# This comes with pre-built binaries for data science
+FROM continuumio/miniconda3
 
-# 1. Install System Dependencies
-RUN apt-get update && apt-get install -y \
-    cmake \
-    build-essential \
-    libopenblas-dev \
-    liblapack-dev \
-    libx11-dev \
-    libgtk-3-dev \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    && rm -rf /var/lib/apt/lists/*
-
-# 2. Set Working Directory
+# 1. Set Working Directory
 WORKDIR /app
+
+# 2. Install System libraries for OpenCV (GL libraries)
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
 # 3. Copy Requirements
 COPY requirements.txt .
 
-# --- CRITICAL FIX START ---
-# Force dlib to compile using only 1 CPU core.
-# This prevents the "Out of Memory" (OOM) error.
-ENV CMAKE_BUILD_PARALLEL_LEVEL=1
-# --- CRITICAL FIX END ---
+# --- THE MAGIC PART ---
+# Instead of compiling dlib (which kills your server), we download it.
+# We verify the channel is conda-forge to get the latest binaries.
+RUN conda install -y -c conda-forge dlib cmake
 
-# 4. Install Dependencies (This will now take 10-15 minutes, be patient!)
+# 4. Install the rest using pip
+# We install the pinned bcrypt here to ensure stability
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. Copy Application
+# 5. Copy Application Code
 COPY . .
 
 # 6. Expose Port
 EXPOSE 8000
 
-# 7. Create Volume for Data
-# Note: Render Free Tier does not support persistent volumes, 
-# so 'data' will reset on every deploy. This is fine for testing.
-VOLUME /app/data
-
-# 8. Start Command
+# 7. Start Command
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
