@@ -15,7 +15,6 @@ RUN apt-get update && apt-get install -y \
 ENV CMAKE_BUILD_PARALLEL_LEVEL=1
 
 # 3. Install dlib & face_recognition to a local user folder
-# This takes ~10-15 minutes but WILL NOT hang like Conda
 RUN pip install --user --no-cache-dir dlib face_recognition
 
 
@@ -24,11 +23,13 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# 1. Install runtime libraries for OpenCV
-# FIX IS HERE: We use 'libgl1' instead of 'libgl1-mesa-glx'
+# 1. Install runtime libraries for OpenCV & Dlib
+# FIX IS HERE: Added 'libopenblas-dev' and 'liblapack-dev' to runtime
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
+    libopenblas-dev \
+    liblapack-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Copy the compiled AI libraries from the Builder Stage
