@@ -120,19 +120,40 @@ def decode_base64(base64_string: str):
         base64_string = base64_string.split(",")[1]
     return base64.b64decode(base64_string)
 
+# FIND THIS FUNCTION AND UPDATE THE model_name
 def get_encoding_from_image(img):
-    """
-    Generates a 4096-d embedding using DeepFace (VGG-Face model).
-    This replaces the old 128-d dlib encoding.
-    """
     try:
-        # DeepFace expects a path or numpy array. OpenCV images are numpy arrays.
-        # We use VGG-Face because it's reliable and moderately fast.
-        embedding_obj = DeepFace.represent(img_path=img, model_name="VGG-Face", enforce_detection=False)
+        # CHANGED: 'VGG-Face' -> 'Facenet' (Much lighter!)
+        embedding_obj = DeepFace.represent(img_path=img, model_name="Facenet", enforce_detection=False)
         return embedding_obj[0]["embedding"]
     except Exception as e:
         print(f"DeepFace Error: {e}")
         return None
+
+# FIND THE MATCHING LOGIC IN mark_attendance AND UPDATE IT
+# ... inside mark_attendance function ...
+    try:
+        # CHANGED: 'VGG-Face' -> 'Facenet'
+        live_embedding = DeepFace.represent(img_path=img, model_name="Facenet", enforce_detection=False)[0]["embedding"]
+        
+        stored_embedding = json.loads(student.face_encoding_json)
+
+        a = np.array(live_embedding)
+        b = np.array(stored_embedding)
+        
+        dot_product = np.dot(a, b)
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+        cosine_similarity = dot_product / (norm_a * norm_b)
+        cosine_distance = 1 - cosine_similarity
+
+        # CHANGED: Threshold for Facenet is strictly 0.40 (same logic, better performance)
+        if cosine_distance > 0.40:
+             raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
+
+    except Exception as e:
+        print(f"DeepFace Match Error: {e}")
+        raise HTTPException(status_code=500, detail="Error verifying face")
 
 def validate_liveness(img):
     """
