@@ -2,8 +2,6 @@ fastapi==0.111.0
 uvicorn[standard]==0.30.1
 python-multipart==0.0.9
 sqlmodel==0.0.19
-# REMOVE dlib
-# REMOVE face_recognition
 numpy==1.26.4
 opencv-python-headless==4.10.0.82
 python-jose==3.3.0
@@ -12,3 +10,6 @@ bcrypt==4.0.1
 pandas==2.2.2
 openpyxl==3.1.5
 requests==2.32.3
+# NEW LIGHTWEIGHT REPLACEMENT
+deepface==0.0.93
+tf-keras==2.17.0

@@ -1,7 +1,7 @@
 # STAGE 1: The Builder (Compiles the heavy stuff)
 FROM python:3.10-slim as builder
 
-# 1. Install compilers
+# 1. Install compilers needed for dlib
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -15,17 +15,17 @@ RUN apt-get update && apt-get install -y \
 ENV CMAKE_BUILD_PARALLEL_LEVEL=1
 
 # 3. Install dlib & face_recognition to a local user folder
+# This will take ~10 mins to build, but only happens once.
 RUN pip install --user --no-cache-dir dlib face_recognition
 
 
-# STAGE 2: The Final Image (Small & Fast)
+# STAGE 2: The Final Image (Small, Fast, & Reliable)
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# 1. Install ALL runtime libraries for Dlib & OpenCV at once
-# We are adding libjpeg62-turbo to fix the current error
-# We are adding libsm6 and libxext6 preemptively
+# 1. Install runtime libraries (The "Running" dependencies)
+# FIX: Added 'libjpeg62-turbo' and friends to solve your errors.
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
@@ -40,10 +40,11 @@ RUN apt-get update && apt-get install -y \
 # 2. Copy the compiled AI libraries from the Builder Stage
 COPY --from=builder /root/.local /root/.local
 
-# 3. Add the local bin to PATH
+# 3. Add the local bin to PATH so Python finds the libraries
 ENV PATH=/root/.local/bin:$PATH
 
 # 4. Install the rest of the lightweight libraries
+# We list them here to ensure a clean install
 RUN pip install --no-cache-dir --user \
     fastapi==0.111.0 \
     uvicorn[standard]==0.30.1 \
