@@ -1,4 +1,4 @@
-# Use Miniconda
+# Use Miniconda (Lightweight, Pre-built binaries)
 FROM continuumio/miniconda3
 
 # 1. Set Working Directory
@@ -12,22 +12,29 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Copy Requirements
-COPY requirements.txt .
+# 3. Install Heavy AI Libraries via Conda (PRE-BUILT BINARIES)
+# We install these FIRST so they are definitely present before pip runs
+RUN conda install -y -c conda-forge dlib face_recognition numpy pandas
 
-# 4. Install Heavy AI Libraries via Conda
-# We install dlib and face_recognition here so we get pre-built binaries
-RUN conda install -y -c conda-forge dlib face_recognition
+# 4. Install Web & App Libraries via Pip (Hardcoded List)
+# We list them here directly to ensure NO "ghost" dependencies from cached files
+RUN pip install --no-cache-dir \
+    fastapi==0.111.0 \
+    uvicorn[standard]==0.30.1 \
+    python-multipart==0.0.9 \
+    sqlmodel==0.0.19 \
+    opencv-python-headless==4.10.0.82 \
+    python-jose==3.3.0 \
+    passlib[bcrypt]==1.7.4 \
+    bcrypt==4.0.1 \
+    openpyxl==3.1.5 \
+    requests==2.32.3
 
-# 5. Install the rest using pip
-# CRITICAL FIX: Removed "--ignore-installed" so pip sees the Conda packages
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 6. Copy Application Code
+# 5. Copy Application Code
 COPY . .
 
-# 7. Expose Port
+# 6. Expose Port
 EXPOSE 8000
 
-# 8. Start Command
+# 7. Start Command
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
