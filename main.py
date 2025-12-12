@@ -7,7 +7,7 @@ import pandas as pd
 import uuid
 import requests
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from contextlib import asynccontextmanager
 
@@ -30,11 +30,11 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 120
 class Instructor(SQLModel, table=True):
     username: str = Field(primary_key=True)
     hashed_password: str
-    institute_name: str  # Links instructor to an institute
+    institute_name: str
 
 class Student(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    institute_name: str = Field(index=True) # Student belongs to this institute
+    institute_name: str = Field(index=True)
     roll_number: str = Field(index=True)
     name: str
     face_encoding_json: str 
@@ -42,7 +42,7 @@ class Student(SQLModel, table=True):
 class ClassSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     instructor_user: str
-    institute_name: str # Session belongs to this institute
+    institute_name: str
     course_name: str
     batch_name: str
     date_str: str 
@@ -52,19 +52,20 @@ class ActiveQR(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     session_id: int = Field(foreign_key="classsession.id")
     qr_token: str
-    created_at: datetime
+    # Store strictly as UTC
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class AttendanceLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     session_id: int = Field(foreign_key="classsession.id")
     student_roll: str
-    timestamp: datetime
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str
 
 # --- DB SETUP ---
 sqlite_file_name = "upasthiti.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
-engine = create_engine(sqlite_url)
+engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
@@ -85,7 +86,7 @@ def get_password_hash(password):
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -157,23 +158,20 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Sessi
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     
-    # Store institute in token for easy access logic? Or just username.
     access_token = create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer", "institute": user.institute_name}
 
 # --- DASHBOARD STATS ---
 @app.get("/api/dashboard_stats")
 async def get_stats(user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
-    # Only count students from YOUR institute
     total_students = session.exec(select(func.count(Student.id)).where(Student.institute_name == user.institute_name)).one()
-    
-    # Only your courses
     courses = session.exec(select(ClassSession.course_name).where(ClassSession.institute_name == user.institute_name).distinct()).all()
-    
+    active_sessions = session.exec(select(func.count(ClassSession.id)).where(ClassSession.institute_name == user.institute_name, ClassSession.is_active == True)).one()
+
     return {
         "institute": user.institute_name,
         "total_students": total_students,
-        "active_courses": len(courses),
+        "active_courses": active_sessions,
         "course_list": courses
     }
 
@@ -185,7 +183,6 @@ class StudentRegisterRequest(BaseModel):
 
 @app.post("/api/register")
 async def register_student(body: StudentRegisterRequest, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
-    # Check existing in THIS institute
     existing = session.exec(select(Student).where(Student.roll_number == body.rollNumber, Student.institute_name == user.institute_name)).first()
     if existing:
         raise HTTPException(400, "Student already registered in this institute")
@@ -200,7 +197,7 @@ async def register_student(body: StudentRegisterRequest, user: Instructor = Depe
         raise HTTPException(400, "No face found in photo")
     
     new_student = Student(
-        institute_name=user.institute_name, # Auto-assign Instructor's Institute
+        institute_name=user.institute_name,
         roll_number=body.rollNumber,
         name=body.name,
         face_encoding_json=json.dumps(encoding)
@@ -262,7 +259,6 @@ class CreateSessionRequest(BaseModel):
 
 @app.post("/api/start_class")
 async def start_class(body: CreateSessionRequest, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
-    # Deactivate old sessions for this instructor
     existing = session.exec(select(ClassSession).where(ClassSession.instructor_user == user.username, ClassSession.is_active == True)).all()
     for s in existing:
         s.is_active = False
@@ -280,6 +276,16 @@ async def start_class(body: CreateSessionRequest, user: Instructor = Depends(get
     session.commit()
     return {"success": True, "session_id": new_session.id}
 
+@app.post("/api/end_class")
+async def end_class(user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    active_session = session.exec(select(ClassSession).where(ClassSession.instructor_user == user.username, ClassSession.is_active == True)).first()
+    if active_session:
+        active_session.is_active = False
+        session.add(active_session)
+        session.commit()
+        return {"success": True, "message": "Class ended successfully"}
+    return {"success": False, "message": "No active class found"}
+
 @app.get("/api/get_qr")
 async def get_qr(user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
     active_session = session.exec(select(ClassSession).where(ClassSession.instructor_user == user.username, ClassSession.is_active == True)).first()
@@ -287,7 +293,8 @@ async def get_qr(user: Instructor = Depends(get_current_user), session: Session 
         raise HTTPException(400, "No active class")
 
     token_str = str(uuid.uuid4())
-    qr_entry = ActiveQR(session_id=active_session.id, qr_token=token_str, created_at=datetime.utcnow())
+    # Create strictly in UTC
+    qr_entry = ActiveQR(session_id=active_session.id, qr_token=token_str, created_at=datetime.now(timezone.utc))
     session.add(qr_entry)
     session.commit()
     return {"qrToken": token_str}
@@ -300,10 +307,19 @@ async def download_excel(session_id: int, user: Instructor = Depends(get_current
     
     logs = session.exec(select(AttendanceLog).where(AttendanceLog.session_id == session_id)).all()
     data = []
+    
+    # Define IST Timezone for Excel export
+    ist = timezone(timedelta(hours=5, minutes=30))
+
     for log in logs:
         student = session.exec(select(Student).where(Student.roll_number == log.student_roll, Student.institute_name == user.institute_name)).first()
         name = student.name if student else "Unknown"
-        data.append({"Roll Number": log.student_roll, "Name": name, "Time": log.timestamp.strftime("%H:%M:%S"), "Status": log.status})
+        
+        # Convert UTC DB time to IST for the excel sheet
+        local_time_obj = log.timestamp.astimezone(ist)
+        local_time_str = local_time_obj.strftime("%H:%M:%S")
+        
+        data.append({"Roll Number": log.student_roll, "Name": name, "Time": local_time_str, "Status": log.status})
     
     df = pd.DataFrame(data, columns=["Roll Number", "Name", "Time", "Status"])
     filename = f"Attendance_{class_session.course_name}_{class_session.batch_name}.xlsx"
@@ -311,52 +327,98 @@ async def download_excel(session_id: int, user: Instructor = Depends(get_current
     return FileResponse(path=filename, filename=filename, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 # --- MOBILE APP ENDPOINT ---
+
 class AttendanceRequest(BaseModel):
     rollNumber: str
     qrCodeData: str
     photoBase64: str
+    timestamp: str 
 
 @app.post("/api/attendance")
 async def mark_attendance(body: AttendanceRequest, session: Session = Depends(get_session)):
-    # 1. Validate QR
+    
+    # 1. PARSE CLIENT TIMESTAMP (HANDLE IST/UTC)
+    try:
+        clean_ts = body.timestamp.replace("Z", "")
+        client_time = datetime.fromisoformat(clean_ts)
+        
+        # FIX: If client sends Naive time (no timezone), assume it is IST (since you are in India)
+        # IST = UTC + 5:30
+        if client_time.tzinfo is None:
+            ist_offset = timezone(timedelta(hours=5, minutes=30))
+            client_time = client_time.replace(tzinfo=ist_offset) # Tag it as IST
+            client_time = client_time.astimezone(timezone.utc)   # Convert to UTC
+        else:
+            client_time = client_time.astimezone(timezone.utc)
+            
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid timestamp format")
+
+    # 2. CHECK IF QR TOKEN EXISTS
     statement = select(ActiveQR).where(ActiveQR.qr_token == body.qrCodeData)
     qr_entry = session.exec(statement).first()
-    if not qr_entry or (datetime.utcnow() - qr_entry.created_at).total_seconds() > 15: # 15s buffer
-        raise HTTPException(403, "Invalid or Expired QR")
+    
+    if not qr_entry:
+        raise HTTPException(status_code=404, detail="Invalid QR Code")
 
+    # 3. DEBUGGING
+    qr_time = qr_entry.created_at.replace(tzinfo=timezone.utc)
+    time_diff = (client_time - qr_time).total_seconds()
+    
+    print(f"DEBUG: Client(UTC)={client_time} | Server(UTC)={qr_time} | Diff={time_diff}")
+
+    # 4. SYNC CHECK (-60s to +60s)
+    if not (-60 <= time_diff <= 60):
+        raise HTTPException(status_code=400, detail=f"Timing Mismatch: Diff is {time_diff:.1f}s")
+
+    # 5. CHECK CLASS STATUS
     class_session = session.get(ClassSession, qr_entry.session_id)
     if not class_session or not class_session.is_active:
-        raise HTTPException(403, "Class Ended")
+        raise HTTPException(status_code=400, detail="Class Session has ended")
 
-    # 2. Find Student (MUST be in same institute as Class Session)
+    # 6. VERIFY STUDENT INSTITUTE
     student = session.exec(select(Student).where(
         Student.roll_number == body.rollNumber, 
         Student.institute_name == class_session.institute_name
     )).first()
     
     if not student:
-        raise HTTPException(404, "Student not found in this Institute")
+        raise HTTPException(status_code=404, detail=f"Student {body.rollNumber} not found in this Institute")
 
-    # 3. Face Match
+    # 7. FACE MATCH
     img_bytes = decode_base64(body.photoBase64)
     img = decode_image_bytes(img_bytes)
-    if img is None: raise HTTPException(400, "Bad Image")
+    if img is None: 
+        raise HTTPException(status_code=400, detail="Invalid image")
     
     live_encoding = get_encoding_from_image(img)
-    if not live_encoding: raise HTTPException(400, "No face visible")
+    if not live_encoding: 
+        raise HTTPException(status_code=400, detail="No face detected")
     
     stored_encoding = np.array(json.loads(student.face_encoding_json))
     match = face_recognition.compare_faces([stored_encoding], np.array(live_encoding), tolerance=0.5)
     
-    if not match[0]: raise HTTPException(401, "Face mismatch")
+    if not match[0]: 
+        raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
 
-    # 4. Mark
-    existing = session.exec(select(AttendanceLog).where(AttendanceLog.session_id == class_session.id, AttendanceLog.student_roll == body.rollNumber)).first()
-    if existing: return {"success": True, "message": "Already Marked"}
+    # 8. MARK ATTENDANCE
+    existing = session.exec(select(AttendanceLog).where(
+        AttendanceLog.session_id == class_session.id, 
+        AttendanceLog.student_roll == body.rollNumber
+    )).first()
+    
+    if existing: 
+        return {"success": True, "message": "Attendance already marked."}
 
-    new_log = AttendanceLog(session_id=class_session.id, student_roll=body.rollNumber, timestamp=datetime.utcnow(), status="PRESENT")
+    new_log = AttendanceLog(
+        session_id=class_session.id, 
+        student_roll=body.rollNumber, 
+        timestamp=datetime.now(timezone.utc), 
+        status="PRESENT"
+    )
     session.add(new_log)
     session.commit()
-    return {"success": True, "message": "Marked Present"}
+    
+    return {"success": True, "message": "Attendance Marked Successfully"}
 
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
