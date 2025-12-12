@@ -3,6 +3,9 @@ uvicorn[standard]==0.30.1
 python-multipart==0.0.9
 sqlmodel==0.0.19
 numpy==1.26.4
+# We use the standard face_recognition library
+face_recognition==1.3.0
+# We need opencv for image decoding
 opencv-python-headless==4.10.0.82
 python-jose==3.3.0
 passlib[bcrypt]==1.7.4
@@ -10,7 +13,3 @@ bcrypt==4.0.1
 pandas==2.2.2
 openpyxl==3.1.5
 requests==2.32.3
-# NEW LIGHTWEIGHT REPLACEMENT
-deepface==0.0.93
-tf-keras==2.17.0
-scipy>=1.13.0

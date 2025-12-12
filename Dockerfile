@@ -1,28 +1,50 @@
-# Use Python 3.10 Slim
+# STAGE 1: Builder (Compiles dlib so you don't have to)
+FROM python:3.10-slim as builder
+
+# Install build tools
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    libopenblas-dev \
+    liblapack-dev \
+    libx11-dev \
+    libgtk-3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dlib & face_recognition
+# This takes ~10-15 mins. BE PATIENT. It only runs once.
+RUN pip install --user --no-cache-dir face_recognition
+
+
+# STAGE 2: Final Runtime (Lightweight & Fast)
 FROM python:3.10-slim
 
-# 1. Set Working Directory
 WORKDIR /app
 
-# 2. Install System Dependencies for OpenCV
-# We only need basic GL libraries now, no heavy compilers
+# 1. Install CRITICAL runtime libraries
+# These are the files that were missing before (libjpeg, libpng, openblas)
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
+    libopenblas0 \
+    libjpeg62-turbo \
+    libpng16-16 \
+    libx11-6 \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Copy Requirements
-COPY requirements.txt .
+# 2. Copy compiled libraries from builder
+COPY --from=builder /root/.local /root/.local
 
-# 4. Install Dependencies
-# This will install deepface and tensorflow automatically
+# 3. Add to PATH
+ENV PATH=/root/.local/bin:$PATH
+
+# 4. Install other dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. Copy Application Code
+# 5. Copy App Code
 COPY . .
 
-# 6. Expose Port
+# 6. Run
 EXPOSE 8000
-
-# 7. Start Command
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

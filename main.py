@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
-# REMOVED: import face_recognition
-from deepface import DeepFace # ADDED: DeepFace replacement
+import face_recognition
 import base64
 import json
 import pandas as pd
@@ -9,7 +8,6 @@ import uuid
 import requests
 import io
 import os
-import gc
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from contextlib import asynccontextmanager
@@ -124,17 +122,17 @@ def decode_base64(base64_string: str):
 # UPDATE THIS FUNCTION
 def get_encoding_from_image(img):
     try:
-        # Use SFace
-        embedding_obj = DeepFace.represent(img_path=img, model_name="SFace", enforce_detection=False)
-        embedding = embedding_obj[0]["embedding"]
+        # Convert BGR (OpenCV) to RGB (face_recognition)
+        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
-        # FORCE CLEANUP: This is critical for 512MB RAM servers
-        del embedding_obj
-        gc.collect() 
+        # Generate 128-d encoding (HOG model is CPU friendly)
+        encodings = face_recognition.face_encodings(rgb_img)
         
-        return embedding
+        if len(encodings) > 0:
+            return encodings[0].tolist() # Return the first face found
+        return None
     except Exception as e:
-        print(f"DeepFace Error: {e}")
+        print(f"AI Error: {e}")
         return None
 
 
@@ -436,38 +434,25 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
 
     
     try:
-        # CHANGED: 'Facenet' -> 'SFace'
-        live_embedding_obj = DeepFace.represent(img_path=img, model_name="SFace", enforce_detection=False)
-        live_embedding = live_embedding_obj[0]["embedding"]
-        # FORCE CLEANUP
-        del live_embedding_obj
-        gc.collect()
+        # 1. Get Live Encoding
+        live_encoding = get_encoding_from_image(img)
+        if not live_encoding:
+             raise HTTPException(status_code=400, detail="No face detected in live photo")
 
-        # 2. Retrieve stored embedding (JSON -> List)
-        stored_embedding = json.loads(student.face_encoding_json)
+        # 2. Get Stored Encoding
+        stored_encoding = json.loads(student.face_encoding_json)
 
-        # 3. Calculate Cosine Similarity
-        # A match is usually found if cosine distance < 0.40 (for VGG-Face)
-        # Cosine Distance = 1 - Cosine Similarity
-        
-        a = np.array(live_embedding)
-        b = np.array(stored_embedding)
-        
-        # Manual Cosine Distance Calculation
-        dot_product = np.dot(a, b)
-        norm_a = np.linalg.norm(a)
-        norm_b = np.linalg.norm(b)
-        cosine_similarity = dot_product / (norm_a * norm_b)
-        cosine_distance = 1 - cosine_similarity
+        # 3. Compare
+        # face_recognition.compare_faces returns a list of True/False
+        # We use a tolerance of 0.5 (Strict) or 0.6 (Standard)
+        match = face_recognition.compare_faces([np.array(stored_encoding)], np.array(live_encoding), tolerance=0.5)
 
-        if cosine_distance > 0.593:
+        if not match[0]:
              raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
 
     except Exception as e:
-        # If the student was registered with the OLD system (dlib 128-d), this math will crash.
-        # We catch that here.
-        print(f"DeepFace Match Error: {e}")
-        raise HTTPException(status_code=500, detail="Error verifying face (Student may need to re-register)")
+        print(f"Match Error: {e}")
+        raise HTTPException(status_code=500, detail="Error verifying face (Data format mismatch? Re-register student)")
 
     # 7. MARK ATTENDANCE
     existing = session.exec(select(AttendanceLog).where(
