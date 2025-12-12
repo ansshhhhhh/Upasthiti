@@ -10,6 +10,7 @@ import io
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -26,7 +27,6 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120
 
 # --- DATABASE MODELS ---
-
 class Instructor(SQLModel, table=True):
     username: str = Field(primary_key=True)
     hashed_password: str
@@ -52,7 +52,6 @@ class ActiveQR(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     session_id: int = Field(foreign_key="classsession.id")
     qr_token: str
-    # Store strictly as UTC
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class AttendanceLog(SQLModel, table=True):
@@ -62,8 +61,12 @@ class AttendanceLog(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str
 
-# --- DB SETUP ---
-sqlite_file_name = "upasthiti.db"
+# --- DB SETUP (UPDATED FOR DOCKER) ---
+# Check if we are running in Docker (we will create a 'data' folder)
+if not os.path.exists("data"):
+    os.makedirs("data")
+
+sqlite_file_name = "data/upasthiti.db"  # CHANGED PATH
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
@@ -103,7 +106,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
-# --- HELPER: IMAGE PROCESSING ---
+# --- HELPER: IMAGE PROCESSING & ANTI-SPOOFING ---
+
 def decode_image_bytes(image_data):
     try:
         nparr = np.frombuffer(image_data, np.uint8)
@@ -122,6 +126,41 @@ def get_encoding_from_image(img):
     if len(encodings) > 0:
         return encodings[0].tolist()
     return None
+
+def validate_liveness(img):
+    """
+    Checks if the image is likely a real face or a screen/photo spoof.
+    Returns: (is_live: bool, reason: str)
+    """
+    # 1. BLUR CHECK (Laplacian Variance)
+    # Screens/Photos of photos are usually blurrier (lower variance) or have Moiré patterns
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
+    
+    # Threshold: < 100 is typically blurry/flat. 
+    # Real selfies usually have high texture (pores, hair) => High Variance
+    if blur_score < 50: 
+        return False, "Image too blurry/flat (Possible Screen Spoof)"
+
+    # 2. GLARE/OVEREXPOSURE CHECK
+    # Screens often have blown-out bright spots
+    # We check the percentage of pixels that are maximum brightness (255)
+    hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
+    bright_pixels = sum(hist[250:]) # Count very bright pixels
+    total_pixels = img.shape[0] * img.shape[1]
+    bright_ratio = bright_pixels / total_pixels
+
+    if bright_ratio > 0.05: # If >5% of image is pure white
+        return False, "Excessive Glare (Possible Screen Reflection)"
+        
+    # 3. DARKNESS CHECK
+    # If image is too dark, we can't verify texture
+    dark_pixels = sum(hist[:10])
+    dark_ratio = dark_pixels / total_pixels
+    if dark_ratio > 0.6:
+        return False, "Image too dark for verification"
+
+    return True, "Live"
 
 # --- APP LIFECYCLE ---
 @asynccontextmanager
@@ -293,7 +332,6 @@ async def get_qr(user: Instructor = Depends(get_current_user), session: Session 
         raise HTTPException(400, "No active class")
 
     token_str = str(uuid.uuid4())
-    # Create strictly in UTC
     qr_entry = ActiveQR(session_id=active_session.id, qr_token=token_str, created_at=datetime.now(timezone.utc))
     session.add(qr_entry)
     session.commit()
@@ -308,14 +346,12 @@ async def download_excel(session_id: int, user: Instructor = Depends(get_current
     logs = session.exec(select(AttendanceLog).where(AttendanceLog.session_id == session_id)).all()
     data = []
     
-    # Define IST Timezone for Excel export
     ist = timezone(timedelta(hours=5, minutes=30))
 
     for log in logs:
         student = session.exec(select(Student).where(Student.roll_number == log.student_roll, Student.institute_name == user.institute_name)).first()
         name = student.name if student else "Unknown"
         
-        # Convert UTC DB time to IST for the excel sheet
         local_time_obj = log.timestamp.astimezone(ist)
         local_time_str = local_time_obj.strftime("%H:%M:%S")
         
@@ -337,71 +373,66 @@ class AttendanceRequest(BaseModel):
 @app.post("/api/attendance")
 async def mark_attendance(body: AttendanceRequest, session: Session = Depends(get_session)):
     
-    # 1. PARSE CLIENT TIMESTAMP (HANDLE IST/UTC)
+    # 1. PARSE TIMESTAMPS
     try:
         clean_ts = body.timestamp.replace("Z", "")
         client_time = datetime.fromisoformat(clean_ts)
-        
-        # FIX: If client sends Naive time (no timezone), assume it is IST (since you are in India)
-        # IST = UTC + 5:30
         if client_time.tzinfo is None:
             ist_offset = timezone(timedelta(hours=5, minutes=30))
-            client_time = client_time.replace(tzinfo=ist_offset) # Tag it as IST
-            client_time = client_time.astimezone(timezone.utc)   # Convert to UTC
+            client_time = client_time.replace(tzinfo=ist_offset)
+            client_time = client_time.astimezone(timezone.utc)
         else:
             client_time = client_time.astimezone(timezone.utc)
-            
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid timestamp format")
 
-    # 2. CHECK IF QR TOKEN EXISTS
+    # 2. VERIFY QR
     statement = select(ActiveQR).where(ActiveQR.qr_token == body.qrCodeData)
     qr_entry = session.exec(statement).first()
-    
     if not qr_entry:
         raise HTTPException(status_code=404, detail="Invalid QR Code")
 
-    # 3. DEBUGGING
+    # 3. SYNC CHECK
     qr_time = qr_entry.created_at.replace(tzinfo=timezone.utc)
     time_diff = (client_time - qr_time).total_seconds()
-    
-    print(f"DEBUG: Client(UTC)={client_time} | Server(UTC)={qr_time} | Diff={time_diff}")
-
-    # 4. SYNC CHECK (-60s to +60s)
     if not (-60 <= time_diff <= 60):
         raise HTTPException(status_code=400, detail=f"Timing Mismatch: Diff is {time_diff:.1f}s")
 
-    # 5. CHECK CLASS STATUS
-    class_session = session.get(ClassSession, qr_entry.session_id)
-    if not class_session or not class_session.is_active:
-        raise HTTPException(status_code=400, detail="Class Session has ended")
-
-    # 6. VERIFY STUDENT INSTITUTE
-    student = session.exec(select(Student).where(
-        Student.roll_number == body.rollNumber, 
-        Student.institute_name == class_session.institute_name
-    )).first()
-    
-    if not student:
-        raise HTTPException(status_code=404, detail=f"Student {body.rollNumber} not found in this Institute")
-
-    # 7. FACE MATCH
+    # 4. DECODE IMAGE
     img_bytes = decode_base64(body.photoBase64)
     img = decode_image_bytes(img_bytes)
     if img is None: 
         raise HTTPException(status_code=400, detail="Invalid image")
-    
+
+    # --- 5. NEW: ANTI-SPOOFING (LIVENESS) CHECK ---
+    is_live, reason = validate_liveness(img)
+    if not is_live:
+        print(f"SPOOF DETECTED for {body.rollNumber}: {reason}")
+        # We return 400 Bad Request with the reason
+        raise HTTPException(status_code=400, detail=f"Liveness Check Failed: {reason}")
+
+    # 6. FACE MATCH
+    class_session = session.get(ClassSession, qr_entry.session_id)
+    if not class_session or not class_session.is_active:
+        raise HTTPException(status_code=400, detail="Class Session has ended")
+
+    student = session.exec(select(Student).where(
+        Student.roll_number == body.rollNumber, 
+        Student.institute_name == class_session.institute_name
+    )).first()
+    if not student:
+        raise HTTPException(status_code=404, detail=f"Student {body.rollNumber} not found")
+
     live_encoding = get_encoding_from_image(img)
     if not live_encoding: 
         raise HTTPException(status_code=400, detail="No face detected")
     
     stored_encoding = np.array(json.loads(student.face_encoding_json))
     match = face_recognition.compare_faces([stored_encoding], np.array(live_encoding), tolerance=0.5)
-    
     if not match[0]: 
         raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
 
-    # 8. MARK ATTENDANCE
+    # 7. MARK ATTENDANCE
     existing = session.exec(select(AttendanceLog).where(
         AttendanceLog.session_id == class_session.id, 
         AttendanceLog.student_roll == body.rollNumber
