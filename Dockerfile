@@ -1,12 +1,14 @@
-# Use Miniconda (Lightweight version of Anaconda)
-# This comes with pre-built binaries for data science
+# Use Miniconda (Lightweight, Pre-built binaries)
 FROM continuumio/miniconda3
 
 # 1. Set Working Directory
 WORKDIR /app
 
-# 2. Install System libraries for OpenCV (GL libraries)
+# 2. Install System compilers (Prevents "gcc not found" errors)
+# We need libgl1 for OpenCV and build-essential for bcrypt/others
 RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
     libgl1-mesa-glx \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
@@ -14,20 +16,19 @@ RUN apt-get update && apt-get install -y \
 # 3. Copy Requirements
 COPY requirements.txt .
 
-# --- THE MAGIC PART ---
-# Instead of compiling dlib (which kills your server), we download it.
-# We verify the channel is conda-forge to get the latest binaries.
-RUN conda install -y -c conda-forge dlib cmake
+# 4. Install Heavy AI Libraries via Conda (PRE-BUILT BINARIES)
+# This installs dlib and face_recognition without compiling
+RUN conda install -y -c conda-forge dlib face_recognition
 
-# 4. Install the rest using pip
-# We install the pinned bcrypt here to ensure stability
-RUN pip install --no-cache-dir -r requirements.txt
+# 5. Install the rest using pip
+# We use --ignore-installed to prevent pip from clashing with conda packages
+RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
 
-# 5. Copy Application Code
+# 6. Copy Application Code
 COPY . .
 
-# 6. Expose Port
+# 7. Expose Port
 EXPOSE 8000
 
-# 7. Start Command
+# 8. Start Command
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,22 +1,12 @@
-# Web Framework
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 python-multipart==0.0.9
-
-# Database
 sqlmodel==0.0.19
-
-# Computer Vision & AI
-# Note: dlib should be installed via Conda (see instructions)
-face_recognition==1.3.0
 numpy==1.26.4
 opencv-python-headless==4.10.0.82
-
-# Security & Auth
 python-jose==3.3.0
 passlib[bcrypt]==1.7.4
-
-# Data & Excel
+bcrypt==4.0.1
 pandas==2.2.2
 openpyxl==3.1.5
-requests
+requests==2.32.3
