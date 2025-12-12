@@ -130,18 +130,6 @@ def get_encoding_from_image(img):
         print(f"DeepFace Error: {e}")
         return None
 
-# UPDATE ATTENDANCE LOGIC
-# ... inside mark_attendance ...
-    try:
-        # CHANGED: 'Facenet' -> 'SFace'
-        live_embedding = DeepFace.represent(img_path=img, model_name="SFace", enforce_detection=False)[0]["embedding"]
-        
-        # ... (rest of math stays the same) ...
-
-        # CHANGED: SFace uses Cosine Distance threshold of 0.593
-        if cosine_distance > 0.593:
-             raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
-
 
 
 def validate_liveness(img):
@@ -430,10 +418,10 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     if not student:
         raise HTTPException(status_code=404, detail=f"Student {body.rollNumber} not found")
 
-    # --- DEEPFACE VERIFICATION LOGIC ---
+    
     try:
-        # 1. Generate embedding for the LIVE image
-        live_embedding = DeepFace.represent(img_path=img, model_name="VGG-Face", enforce_detection=False)[0]["embedding"]
+        # CHANGED: 'Facenet' -> 'SFace'
+        live_embedding = DeepFace.represent(img_path=img, model_name="SFace", enforce_detection=False)[0]["embedding"]
         
         # 2. Retrieve stored embedding (JSON -> List)
         stored_embedding = json.loads(student.face_encoding_json)
@@ -452,8 +440,7 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
         cosine_similarity = dot_product / (norm_a * norm_b)
         cosine_distance = 1 - cosine_similarity
 
-        # Threshold for VGG-Face is typically 0.40
-        if cosine_distance > 0.40:
+        if cosine_distance > 0.593:
              raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
 
     except Exception as e:
