@@ -9,6 +9,7 @@ import uuid
 import requests
 import io
 import os
+import gc
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from contextlib import asynccontextmanager
@@ -123,9 +124,15 @@ def decode_base64(base64_string: str):
 # UPDATE THIS FUNCTION
 def get_encoding_from_image(img):
     try:
-        # CHANGED: 'Facenet' -> 'SFace' (Lightweight standard)
+        # Use SFace
         embedding_obj = DeepFace.represent(img_path=img, model_name="SFace", enforce_detection=False)
-        return embedding_obj[0]["embedding"]
+        embedding = embedding_obj[0]["embedding"]
+        
+        # FORCE CLEANUP: This is critical for 512MB RAM servers
+        del embedding_obj
+        gc.collect() 
+        
+        return embedding
     except Exception as e:
         print(f"DeepFace Error: {e}")
         return None
@@ -162,7 +169,16 @@ def validate_liveness(img):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    print("Loading AI Model...")
+    # This loads SFace into memory immediately when the server starts.
+    # It prevents the server from trying to load it while handling a user request.
+    try:
+        DeepFace.build_model("SFace")
+        print("AI Model Loaded Successfully.")
+    except Exception as e:
+        print(f"Warning: Model load failed (will retry on demand): {e}")
     yield
+
 
 app = FastAPI(title="Upasthiti API", lifespan=lifespan)
 
@@ -421,8 +437,12 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     
     try:
         # CHANGED: 'Facenet' -> 'SFace'
-        live_embedding = DeepFace.represent(img_path=img, model_name="SFace", enforce_detection=False)[0]["embedding"]
-        
+        live_embedding_obj = DeepFace.represent(img_path=img, model_name="SFace", enforce_detection=False)
+        live_embedding = live_embedding_obj[0]["embedding"]
+        # FORCE CLEANUP
+        del live_embedding_obj
+        gc.collect()
+
         # 2. Retrieve stored embedding (JSON -> List)
         stored_embedding = json.loads(student.face_encoding_json)
 
