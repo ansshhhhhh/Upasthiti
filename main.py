@@ -1,16 +1,17 @@
 import cv2
 import numpy as np
-from deepface import DeepFace
+# REMOVED: import face_recognition
+from deepface import DeepFace # ADDED: DeepFace replacement
 import base64
 import json
 import pandas as pd
 import uuid
 import requests
 import io
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from contextlib import asynccontextmanager
-import os
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -22,7 +23,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 
 # --- CONFIGURATION ---
-SECRET_KEY = "upasthiti_secret_key_change_in_production"
+SECRET_KEY = os.getenv("SECRET_KEY", "upasthiti_secret_key_change_in_production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120
 
@@ -61,12 +62,11 @@ class AttendanceLog(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str
 
-# --- DB SETUP (UPDATED FOR DOCKER) ---
-# Check if we are running in Docker (we will create a 'data' folder)
+# --- DB SETUP (Docker Friendly) ---
 if not os.path.exists("data"):
     os.makedirs("data")
 
-sqlite_file_name = "data/upasthiti.db"  # CHANGED PATH
+sqlite_file_name = "data/upasthiti.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
@@ -121,40 +121,38 @@ def decode_base64(base64_string: str):
     return base64.b64decode(base64_string)
 
 def get_encoding_from_image(img):
-    rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    encodings = face_recognition.face_encodings(rgb_img)
-    if len(encodings) > 0:
-        return encodings[0].tolist()
-    return None
+    """
+    Generates a 4096-d embedding using DeepFace (VGG-Face model).
+    This replaces the old 128-d dlib encoding.
+    """
+    try:
+        # DeepFace expects a path or numpy array. OpenCV images are numpy arrays.
+        # We use VGG-Face because it's reliable and moderately fast.
+        embedding_obj = DeepFace.represent(img_path=img, model_name="VGG-Face", enforce_detection=False)
+        return embedding_obj[0]["embedding"]
+    except Exception as e:
+        print(f"DeepFace Error: {e}")
+        return None
 
 def validate_liveness(img):
     """
     Checks if the image is likely a real face or a screen/photo spoof.
     Returns: (is_live: bool, reason: str)
     """
-    # 1. BLUR CHECK (Laplacian Variance)
-    # Screens/Photos of photos are usually blurrier (lower variance) or have Moiré patterns
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
     
-    # Threshold: < 100 is typically blurry/flat. 
-    # Real selfies usually have high texture (pores, hair) => High Variance
     if blur_score < 50: 
         return False, "Image too blurry/flat (Possible Screen Spoof)"
 
-    # 2. GLARE/OVEREXPOSURE CHECK
-    # Screens often have blown-out bright spots
-    # We check the percentage of pixels that are maximum brightness (255)
     hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-    bright_pixels = sum(hist[250:]) # Count very bright pixels
+    bright_pixels = sum(hist[250:]) 
     total_pixels = img.shape[0] * img.shape[1]
     bright_ratio = bright_pixels / total_pixels
 
-    if bright_ratio > 0.05: # If >5% of image is pure white
+    if bright_ratio > 0.05:
         return False, "Excessive Glare (Possible Screen Reflection)"
         
-    # 3. DARKNESS CHECK
-    # If image is too dark, we can't verify texture
     dark_pixels = sum(hist[:10])
     dark_ratio = dark_pixels / total_pixels
     if dark_ratio > 0.6:
@@ -231,6 +229,7 @@ async def register_student(body: StudentRegisterRequest, user: Instructor = Depe
     if img is None:
         raise HTTPException(400, "Invalid Image")
 
+    # Use DeepFace Embedding
     encoding = get_encoding_from_image(img)
     if not encoding:
         raise HTTPException(400, "No face found in photo")
@@ -271,7 +270,7 @@ async def bulk_register(file: UploadFile = File(...), user: Instructor = Depends
             response = requests.get(link, timeout=10)
             if response.status_code == 200:
                 img = decode_image_bytes(response.content)
-                encoding = get_encoding_from_image(img)
+                encoding = get_encoding_from_image(img) # Uses DeepFace now
                 if encoding:
                     session.add(Student(
                         institute_name=user.institute_name,
@@ -404,11 +403,9 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     if img is None: 
         raise HTTPException(status_code=400, detail="Invalid image")
 
-    # --- 5. NEW: ANTI-SPOOFING (LIVENESS) CHECK ---
+    # 5. ANTI-SPOOFING (LIVENESS) CHECK
     is_live, reason = validate_liveness(img)
     if not is_live:
-        print(f"SPOOF DETECTED for {body.rollNumber}: {reason}")
-        # We return 400 Bad Request with the reason
         raise HTTPException(status_code=400, detail=f"Liveness Check Failed: {reason}")
 
     # 6. FACE MATCH
@@ -423,30 +420,37 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     if not student:
         raise HTTPException(status_code=404, detail=f"Student {body.rollNumber} not found")
 
-    # DeepFace expects paths or numpy arrays.
-    # We compare the incoming 'img' (live photo) against the stored path or reference.
-    # Since you stored JSON encodings before, we need to change how we verify.
-    # ideally, DeepFace compares two images. 
-    
-    # For now, to make it work with your existing logic, we can try to verify 
-    # the incoming image against the student's *registered photo*.
-    # (You might need to update your database to store the image path or base64 
-    # instead of just the encoding if you switch libraries fully).
-    
-    # SIMPLEST FIX for now: Use DeepFace to calculate embedding and compare.
+    # --- DEEPFACE VERIFICATION LOGIC ---
     try:
-        # Calculate embedding for the live image
+        # 1. Generate embedding for the LIVE image
         live_embedding = DeepFace.represent(img_path=img, model_name="VGG-Face", enforce_detection=False)[0]["embedding"]
         
-        # Load the stored encoding (Old dlib encoding is 128-d, DeepFace VGG is 2622-d or 4096-d)
-        # CRITICAL WARNING: DeepFace cannot match against old 'face_recognition' (dlib) encodings.
-        # You will need to re-register students or stick to dlib.
+        # 2. Retrieve stored embedding (JSON -> List)
+        stored_embedding = json.loads(student.face_encoding_json)
+
+        # 3. Calculate Cosine Similarity
+        # A match is usually found if cosine distance < 0.40 (for VGG-Face)
+        # Cosine Distance = 1 - Cosine Similarity
         
-        # If you want to stick to dlib because you already have student data:
-        # I recommend we FIX the Dockerfile (previous solution) instead of changing the code.
-        # Changing to DeepFace means DELETING your database and re-registering everyone.
+        a = np.array(live_embedding)
+        b = np.array(stored_embedding)
+        
+        # Manual Cosine Distance Calculation
+        dot_product = np.dot(a, b)
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+        cosine_similarity = dot_product / (norm_a * norm_b)
+        cosine_distance = 1 - cosine_similarity
+
+        # Threshold for VGG-Face is typically 0.40
+        if cosine_distance > 0.40:
+             raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
+
     except Exception as e:
-         raise HTTPException(status_code=400, detail=f"AI Error: {str(e)}")
+        # If the student was registered with the OLD system (dlib 128-d), this math will crash.
+        # We catch that here.
+        print(f"DeepFace Match Error: {e}")
+        raise HTTPException(status_code=500, detail="Error verifying face (Student may need to re-register)")
 
     # 7. MARK ATTENDANCE
     existing = session.exec(select(AttendanceLog).where(
@@ -468,4 +472,6 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     
     return {"success": True, "message": "Attendance Marked Successfully"}
 
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# Serve static files if folder exists
+if os.path.exists("static"):
+    app.mount("/", StaticFiles(directory="static", html=True), name="static")
