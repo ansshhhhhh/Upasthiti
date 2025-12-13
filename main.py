@@ -190,155 +190,105 @@ def crop_face(img):
 
 def validate_liveness(img):
     """
-    Enhanced liveness detection to prevent photo spoofing attacks.
-    Detects if the image is from a live person or a photo/screen.
+    Balanced Liveness Detection using a Scoring System.
+    Prevents false negatives (rejecting real humans) while catching screens.
     """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     height, width = gray.shape
     total_pixels = height * width
     
-    # 1. Basic quality checks
+    spoof_score = 0
+    reasons = []
+
+    # 1. BLUR CHECK (Relaxed)
+    # Screens are sharp, but real selfies are often slightly blurry.
+    # We only penalize EXTREME blur or UNNATURAL sharpness.
     blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
-    if blur_score < 50: 
-        return False, "Image too blurry/flat (Possible Screen Spoof)"
-
+    if blur_score < 40: # Threshold lowered from 50
+        spoof_score += 1
+        reasons.append("Too Blurry")
+    
+    # 2. GLARE / REFLECTION (Common on screens)
+    # Screens reflect light flatly; faces diffuse it.
     hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-    bright_pixels = sum(hist[250:]) 
+    bright_pixels = sum(hist[245:]) # Check only very bright pixels
     bright_ratio = bright_pixels / total_pixels
+    
+    if bright_ratio > 0.15: # Threshold relaxed from 0.05 to 0.15 (15%)
+        spoof_score += 1
+        reasons.append("High Glare/Reflection")
 
-    if bright_ratio > 0.05: 
-        return False, "Excessive Glare (Possible Screen Reflection)"
-        
+    # 3. DARKNESS CHECK (Relaxed)
+    # Classrooms can be dim. Only fail absolute darkness.
     dark_pixels = sum(hist[:10])
     dark_ratio = dark_pixels / total_pixels
-    if dark_ratio > 0.6:
-        return False, "Image too dark for verification"
+    if dark_ratio > 0.85: # Threshold relaxed from 0.6
+        spoof_score += 1
+        reasons.append("Too Dark")
 
-    # 2. Frequency Domain Analysis - Screens show periodic patterns
-    # Downsample for faster FFT computation
-    fft_size = 256
-    if height > fft_size or width > fft_size:
+    # 4. MOIRE PATTERN (The "Anti-Screen" Weapon)
+    # Detects pixel grids found on screens but not faces.
+    try:
+        # Resize for speed and noise reduction
+        fft_size = 256
         gray_fft = cv2.resize(gray, (fft_size, fft_size))
-    else:
-        gray_fft = gray
-    
-    # Convert to frequency domain using FFT
-    f_transform = np.fft.fft2(gray_fft)
-    f_shift = np.fft.fftshift(f_transform)
-    magnitude_spectrum = np.abs(f_shift)
-    
-    # Check for high-frequency patterns typical of screens
-    # Screens often have grid-like patterns in frequency domain
-    fft_h, fft_w = gray_fft.shape
-    center_y, center_x = fft_h // 2, fft_w // 2
-    # Check a ring around center (typical screen pattern location)
-    y, x = np.ogrid[:fft_h, :fft_w]
-    mask = ((x - center_x)**2 + (y - center_y)**2) >= (min(fft_w, fft_h) * 0.15)**2
-    mask = mask & (((x - center_x)**2 + (y - center_y)**2) <= (min(fft_w, fft_h) * 0.4)**2)
-    
-    ring_energy = np.sum(magnitude_spectrum[mask])
-    total_energy = np.sum(magnitude_spectrum)
-    if total_energy > 0 and ring_energy / total_energy > 0.20:
-        return False, "Screen pattern detected (Possible Photo on Device)"
-    
-    # 3. Texture Analysis - Photos on screens have different texture
-    # Use Local Binary Pattern (LBP) variance for texture analysis
-    # Optimized LBP calculation using numpy vectorization
-    def calculate_lbp_fast(image):
-        """Fast LBP calculation using numpy"""
-        rows, cols = image.shape
-        if rows < 3 or cols < 3:
-            return np.zeros_like(image)
         
-        lbp = np.zeros((rows-2, cols-2), dtype=np.uint8)
-        center = image[1:rows-1, 1:cols-1]
+        f_transform = np.fft.fft2(gray_fft)
+        f_shift = np.fft.fftshift(f_transform)
+        magnitude_spectrum = np.abs(f_shift)
         
-        # Compare with 8 neighbors
-        code = np.zeros_like(lbp, dtype=np.uint8)
-        code |= (image[0:rows-2, 0:cols-2] >= center).astype(np.uint8) << 7
-        code |= (image[0:rows-2, 1:cols-1] >= center).astype(np.uint8) << 6
-        code |= (image[0:rows-2, 2:cols] >= center).astype(np.uint8) << 5
-        code |= (image[1:rows-1, 2:cols] >= center).astype(np.uint8) << 4
-        code |= (image[2:rows, 2:cols] >= center).astype(np.uint8) << 3
-        code |= (image[2:rows, 1:cols-1] >= center).astype(np.uint8) << 2
-        code |= (image[2:rows, 0:cols-2] >= center).astype(np.uint8) << 1
-        code |= (image[1:rows-1, 0:cols-2] >= center).astype(np.uint8) << 0
+        # Calculate energy in high-frequency outer ring
+        total_energy = np.sum(magnitude_spectrum)
+        center_y, center_x = fft_size // 2, fft_size // 2
+        y, x = np.ogrid[:fft_size, :fft_size]
         
-        return code
-    
-    # Sample a region for LBP (faster computation)
-    sample_size = min(200, height, width)
-    sample_gray = cv2.resize(gray, (sample_size, sample_size))
-    lbp = calculate_lbp_fast(sample_gray)
-    lbp_variance = np.var(lbp) if lbp.size > 0 else 0
-    
-    # Photos on screens often have lower texture variance
-    if lbp_variance < 500:
-        return False, "Low texture variance (Possible Printed Photo)"
-    
-    # 4. Edge Density Analysis - Screens/photos may have different edge patterns
-    edges = cv2.Canny(gray, 50, 150)
-    edge_density = np.sum(edges > 0) / total_pixels
-    
-    # Too many edges might indicate a photo (sharp edges from screen)
-    if edge_density > 0.3:
-        return False, "Unusual edge pattern detected (Possible Screen Photo)"
-    
-    # Too few edges might indicate a blurry photo
-    if edge_density < 0.05:
-        return False, "Insufficient detail (Possible Blurry Photo)"
-    
-    # 5. Color Saturation Check - Screen photos often have different color characteristics
+        # Mask for high frequency ring (where screen grid patterns live)
+        mask_ring = ((x - center_x)**2 + (y - center_y)**2 >= (fft_size*0.2)**2)
+        ring_energy = np.sum(magnitude_spectrum[mask_ring])
+        
+        ratio = ring_energy / (total_energy + 1e-5)
+        
+        # Screens often have very high high-frequency energy due to pixel grids
+        if ratio > 0.65: # Tuned threshold
+            spoof_score += 2 # Heavy penalty for screen patterns
+            reasons.append(f"Screen Pattern Detected (FFT: {ratio:.2f})")
+    except Exception:
+        pass # If FFT fails, ignore it (don't crash)
+
+    # 5. TEXTURE / FLATNESS (LBP)
+    # Paper/Screens look "flatter" than 3D faces.
+    try:
+        # Simple gradient-based texture check (faster/more robust than full LBP)
+        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        gradient_magnitude = np.sqrt(sobelx**2 + sobely**2)
+        texture_score = np.mean(gradient_magnitude)
+        
+        if texture_score < 5.0: # Very smooth/flat image
+            spoof_score += 1
+            reasons.append("Unnatural Smoothness/Flatness")
+    except:
+        pass
+
+    # 6. COLOR CONSISTENCY (HSV)
+    # Screens often have weird color balance or low saturation.
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     saturation = hsv[:, :, 1]
-    avg_saturation = np.mean(saturation)
+    avg_sat = np.mean(saturation)
     
-    # Photos on screens may have lower or higher saturation
-    if avg_saturation < 30:
-        return False, "Low color saturation (Possible Photo)"
-    if avg_saturation > 200:
-        return False, "Unnatural color saturation (Possible Screen Display)"
+    if avg_sat < 20: # Almost grayscale (paper/screen often)
+        spoof_score += 1
+        reasons.append("Low Color Saturation")
     
-    # 6. Face Size and Position Check
-    rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    face_locations = face_recognition.face_locations(rgb_img)
+    # --- FINAL VERDICT ---
+    # Real humans might trigger 1 or 2 flags (e.g. Bad Light + Blurry)
+    # Spoofs usually trigger 3+ (Glare + Screen Pattern + Flatness)
     
-    if len(face_locations) == 0:
-        return False, "No face detected"
-    
-    if len(face_locations) > 1:
-        return False, "Multiple faces detected (Possible Photo with Multiple People)"
-    
-    # Check if face is reasonably sized (not too small - might be a photo on screen)
-    top, right, bottom, left = face_locations[0]
-    face_height = bottom - top
-    face_width = right - left
-    face_area_ratio = (face_height * face_width) / total_pixels
-    
-    # Face should be at least 5% of image (photos on screens are often smaller)
-    if face_area_ratio < 0.05:
-        return False, "Face too small (Possible Photo on Screen)"
-    
-    # Face should not be too large (unlikely in real camera capture)
-    if face_area_ratio > 0.6:
-        return False, "Face too large (Unusual capture)"
-    
-    # 7. Lighting Consistency Check
-    # Real faces have gradual lighting, photos on screens may have harsh transitions
-    face_region = gray[top:bottom, left:right]
-    if face_region.size > 0:
-        face_std = np.std(face_region)
-        # Very uniform lighting might indicate a photo
-        if face_std < 15:
-            return False, "Unnatural lighting (Possible Photo)"
-    
-    # 8. Aspect Ratio Check
-    # Photos on phones/screens often have different aspect ratios
-    img_aspect = width / height
-    if img_aspect < 0.5 or img_aspect > 2.0:
-        return False, "Unusual image dimensions"
-    
-    # All checks passed
+    if spoof_score >= 3:
+        reason_str = ", ".join(reasons)
+        print(f"Liveness Failed. Score: {spoof_score}. Reasons: {reason_str}") # Log for debugging
+        return False, f"Verification Failed: {reasons[0] if reasons else 'Suspected Screen Spoof'}"
+        
     return True, "Live"
 
 @asynccontextmanager
