@@ -1,39 +1,38 @@
-# Use Python 3.10 Slim (Smaller, faster)
+# 1. Use an official lightweight Python image
 FROM python:3.10-slim
 
-# 1. Install System Dependencies required for Face Recognition & OpenCV
-# dlib needs cmake and build-essential (GCC) to compile
+# 2. Prevent Python from buffering stdout/stderr
+ENV PYTHONUNBUFFERED=1
+
+# 3. Install System Dependencies
+# FIX: Replaced 'libgl1-mesa-glx' with 'libgl1' (New Debian name)
+# KEEP: 'libpq-dev' for Postgres and 'cmake' for Face Recognition
 RUN apt-get update && apt-get install -y \
-    cmake \
     build-essential \
-    libopenblas-dev \
-    liblapack-dev \
-    libx11-dev \
-    libgtk-3-dev \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
+    cmake \
+    libgl1 \
+    libglib2.0-0 \
+    libpq-dev \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Set Working Directory
+# 4. Set working directory
 WORKDIR /app
 
-# 3. Copy Requirements first (to cache dependencies)
+# 5. Copy requirements first (to leverage Docker caching)
 COPY requirements.txt .
 
-# 4. Install Python Dependencies
-# (This step will take 5-10 minutes because dlib has to compile)
-RUN pip install --no-cache-dir -r requirements.txt
+# 6. Install Python Dependencies
+# KEEP: --default-timeout=1000 to solve your "ReadTimeoutError"
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --default-timeout=1000 -r requirements.txt
 
-# 5. Copy the rest of the application
+# 7. Copy the rest of the application code
 COPY . .
 
-# 6. Expose the port
+# 8. Expose the port
 EXPOSE 8000
 
-# 7. Create a volume mount point for the database (So data isn't lost on restart)
-VOLUME /app/data
-
-# 8. Start Command
-# We use --host 0.0.0.0 so it is accessible outside the container
+# 9. Run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
