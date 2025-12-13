@@ -566,6 +566,7 @@ async def delete_student(student_id: int, user: Instructor = Depends(get_current
     return {"success": True}
 
 class AttendanceRequest(BaseModel):
+    instituteName: str
     rollNumber: str
     qrCodeData: str
     photoBase64: str
@@ -610,9 +611,14 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     if not class_session or not class_session.is_active:
         raise HTTPException(status_code=400, detail="Class Session has ended")
 
+    # Verify institute name matches the class session
+    if body.instituteName != class_session.institute_name:
+        raise HTTPException(status_code=403, detail="Institute name mismatch with class session")
+
+    # Verify student exists with the provided institute name and roll number
     student = session.exec(select(Student).where(
         Student.roll_number == body.rollNumber, 
-        Student.institute_name == class_session.institute_name
+        Student.institute_name == body.instituteName
     )).first()
     if not student:
         raise HTTPException(status_code=404, detail=f"Student {body.rollNumber} not found")
