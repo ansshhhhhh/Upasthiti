@@ -575,4 +575,5 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     
     return {"success": True, "message": "Attendance Marked Successfully"}
 
+app.mount("/static", StaticFiles(directory="static"), name="static_assets")
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
