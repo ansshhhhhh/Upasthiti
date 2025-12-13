@@ -1,50 +1,39 @@
-# STAGE 1: Builder (Compiles dlib so you don't have to)
-FROM python:3.10-slim as builder
+# Use Python 3.10 Slim (Smaller, faster)
+FROM python:3.10-slim
 
-# Install build tools
+# 1. Install System Dependencies required for Face Recognition & OpenCV
+# dlib needs cmake and build-essential (GCC) to compile
 RUN apt-get update && apt-get install -y \
-    build-essential \
     cmake \
+    build-essential \
     libopenblas-dev \
     liblapack-dev \
     libx11-dev \
     libgtk-3-dev \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dlib & face_recognition
-# This takes ~10-15 mins. BE PATIENT. It only runs once.
-RUN pip install --user --no-cache-dir face_recognition
-
-
-# STAGE 2: Final Runtime (Lightweight & Fast)
-FROM python:3.10-slim
-
+# 2. Set Working Directory
 WORKDIR /app
 
-# 1. Install CRITICAL runtime libraries
-# These are the files that were missing before (libjpeg, libpng, openblas)
-RUN apt-get update && apt-get install -y \
-    libgl1 \
-    libglib2.0-0 \
-    libopenblas0 \
-    libjpeg62-turbo \
-    libpng16-16 \
-    libx11-6 \
-    && rm -rf /var/lib/apt/lists/*
-
-# 2. Copy compiled libraries from builder
-COPY --from=builder /root/.local /root/.local
-
-# 3. Add to PATH
-ENV PATH=/root/.local/bin:$PATH
-
-# 4. Install other dependencies
+# 3. Copy Requirements first (to cache dependencies)
 COPY requirements.txt .
+
+# 4. Install Python Dependencies
+# (This step will take 5-10 minutes because dlib has to compile)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. Copy App Code
+# 5. Copy the rest of the application
 COPY . .
 
-# 6. Run
+# 6. Expose the port
 EXPOSE 8000
+
+# 7. Create a volume mount point for the database (So data isn't lost on restart)
+VOLUME /app/data
+
+# 8. Start Command
+# We use --host 0.0.0.0 so it is accessible outside the container
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -5,330 +5,471 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upasthiti | Smart Attendance</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="icon" type="image/png" href="/static/icon.png"> 
+
     <style>
         :root {
-            --primary: #2563eb;
-            --primary-dark: #1e40af;
-            --secondary: #64748b;
-            --bg: #f1f5f9;
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --bg: #f3f4f6;
             --surface: #ffffff;
-            --text: #0f172a;
+            --text-main: #111827;
+            --text-sec: #6b7280;
             --danger: #ef4444;
-            --success: #22c55e;
-            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --border: #e5e7eb;
         }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text-main); margin: 0; display: flex; height: 100vh; overflow: hidden; }
 
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        /* LOGO STYLES */
+        .logo-container { text-align: center; margin-bottom: 30px; }
+        .logo-img { width: 80px; height: auto; margin-bottom: 10px; }
+        
+        /* SPINNERS & ANIMATIONS */
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner {
+            display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%; border-top-color: #fff; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle;
+        }
+        .btn-loading { pointer-events: none; opacity: 0.7; }
+        
+        /* LAYOUT */
+        aside { width: 260px; background: #1f2937; color: white; display: flex; flex-direction: column; padding: 24px; }
+        .nav-item { padding: 12px; margin: 4px 0; border-radius: 8px; cursor: pointer; color: #9ca3af; transition: 0.2s; font-weight: 500;}
+        .nav-item:hover { background: #374151; color: white; }
+        .nav-item.active { background: var(--primary); color: white; }
+        
+        main { flex: 1; padding: 40px; overflow-y: auto; position: relative; }
+        
+        /* CARDS & TABLES */
+        .card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 24px; }
+        .card h3 { margin-top: 0; font-size: 1.1rem; color: var(--text-main); border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+        
+        input, select { width: 100%; padding: 10px; margin: 8px 0 16px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; border: none; border-radius: 6px; background: var(--primary); color: white; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        button:hover { background: var(--primary-hover); }
+        .btn-danger { background: var(--danger); }
+        .btn-sm { width: auto; padding: 6px 12px; font-size: 0.85rem; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-sec); font-weight: 500; font-size: 0.9rem; }
         
         /* AUTH SCREEN */
-        #auth-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); position: absolute; z-index: 100; transition: opacity 0.5s; }
-        .auth-card { background: var(--surface); padding: 40px; border-radius: 16px; width: 350px; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); }
-        .auth-card h1 { margin: 0 0 20px 0; text-align: center; color: var(--primary); }
-        .auth-toggle { text-align: center; margin-top: 15px; font-size: 0.9em; cursor: pointer; color: var(--secondary); }
-        .auth-toggle:hover { text-decoration: underline; }
-
-        /* DASHBOARD LAYOUT */
-        #app-container { display: flex; width: 100%; height: 100%; opacity: 0; transition: opacity 0.5s; }
-        aside { width: 260px; background: #1e293b; color: white; display: flex; flex-direction: column; padding: 20px; box-shadow: 4px 0 10px rgba(0,0,0,0.1); }
-        aside h2 { margin-bottom: 40px; font-weight: 700; letter-spacing: -0.5px; }
+        #auth-container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #4f46e5, #818cf8); position: absolute; z-index: 50; }
+        .auth-card { background: white; padding: 40px; border-radius: 12px; width: 360px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
         
-        .nav-item { padding: 12px 16px; margin-bottom: 8px; cursor: pointer; border-radius: 8px; color: #94a3b8; font-weight: 500; transition: all 0.2s; }
-        .nav-item:hover { background: #334155; color: white; }
-        .nav-item.active { background: var(--primary); color: white; }
-
-        main { flex: 1; padding: 40px; overflow-y: auto; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        .header h2 { font-size: 1.8rem; font-weight: 600; margin: 0; }
-        
-        /* CARDS & FORMS */
-        .card { background: var(--surface); padding: 25px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 20px; }
-        input, select { width: 100%; padding: 12px; margin: 8px 0 16px; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; font-family: inherit; }
-        
-        button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: transform 0.1s; }
-        button:active { transform: scale(0.98); }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-danger { background: var(--danger); color: white; }
-        .btn-success { background: var(--success); color: white; }
-        
-        /* QR AREA */
-        #qr-container { display: flex; flex-direction: column; align-items: center; padding: 40px; background: #f8fafc; border-radius: 16px; border: 2px dashed #cbd5e1; }
-        #timer { font-size: 0.9rem; color: var(--secondary); margin-top: 15px; }
-
         /* UTILS */
         .hidden { display: none !important; }
-        .toast { position: fixed; bottom: 20px; right: 20px; background: #334155; color: white; padding: 12px 24px; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); opacity: 0; transition: opacity 0.3s; z-index: 1000; }
+        .row { display: flex; gap: 10px; align-items: center; }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #1f2937; color: white; padding: 12px 24px; border-radius: 8px; opacity: 0; transition: 0.3s; z-index: 100; pointer-events: none; }
         .toast.show { opacity: 1; }
-        .toast.error { background: var(--danger); }
-        .toast.success { background: var(--success); }
     </style>
 </head>
 <body>
 
-    <div id="toast" class="toast">Message</div>
+<div id="toast" class="toast">Notification</div>
 
-    <div id="auth-container">
-        <div id="form-login" class="auth-card">
-            <h1>Upasthiti</h1>
-            <input type="text" id="login-user" placeholder="Username" />
-            <input type="password" id="login-pass" placeholder="Password" />
-            <button class="btn-primary" onclick="handleLogin()">Log In</button>
-            <div class="auth-toggle" onclick="toggleAuth('signup')">New Institute? Register here</div>
+<div id="auth-container">
+    <div id="form-login" class="auth-card">
+        <div style="text-align: center; margin-bottom: 20px;">
+            <img src="/static/logo.png" style="width: 60px;">
+            <h2 style="color: var(--primary); margin: 10px 0;">Upasthiti</h2>
+        </div>
+        <input type="text" id="login-user" placeholder="Username" />
+        <input type="password" id="login-pass" placeholder="Password" />
+        <button id="btn-login" onclick="handleLogin()">Log In</button>
+        <p style="text-align: center; font-size: 0.9rem; color: var(--text-sec); cursor: pointer;" onclick="toggleAuth()">Create New Institute Account</p>
+    </div>
+    <div id="form-signup" class="auth-card hidden">
+        <h2 style="text-align: center; color: var(--primary); margin-bottom: 20px;">Register Institute</h2>
+        <input type="text" id="reg-inst" placeholder="Institute Name" />
+        <input type="text" id="reg-user" placeholder="Username" />
+        <input type="password" id="reg-pass" placeholder="Password" />
+        <button id="btn-signup" onclick="handleSignup()">Sign Up</button>
+        <p style="text-align: center; font-size: 0.9rem; color: var(--text-sec); cursor: pointer;" onclick="toggleAuth()">Back to Login</p>
+    </div>
+</div>
+
+<div id="app-container" class="hidden" style="display: flex; height: 100%;">
+    <aside>
+        <div class="logo-container">
+            <img src="/static/logo.png" class="logo-img">
+            <h2 style="margin: 0;">Upasthiti</h2>
         </div>
         
-        <div id="form-signup" class="auth-card hidden">
-            <h1>Register</h1>
-            <input type="text" id="reg-inst" placeholder="Institute Name" />
-            <input type="text" id="reg-user" placeholder="Username" />
-            <input type="password" id="reg-pass" placeholder="Password" />
-            <button class="btn-primary" onclick="handleSignup()">Create Account</button>
-            <div class="auth-toggle" onclick="toggleAuth('login')">Already have an account? Log In</div>
+        <div class="nav-item active" onclick="nav('dashboard')" id="nav-dashboard">Dashboard</div>
+        <div class="nav-item" onclick="nav('courses')" id="nav-courses">Manage Courses</div>
+        <div class="nav-item" onclick="nav('attendance')" id="nav-attendance">Live Attendance</div>
+        <div class="nav-item" onclick="nav('students')" id="nav-students">Manage Students</div>
+        <div style="flex:1"></div>
+        <div class="nav-item" onclick="logout()" style="color: #f87171;">Logout</div>
+    </aside>
+
+    <main>
+        <div id="view-dashboard">
+            <h2>Dashboard</h2>
+            <div class="row" style="gap: 20px; margin-top: 20px;">
+                <div class="card" style="flex: 1;">
+                    <h3>Total Students</h3>
+                    <h1 id="stat-students" style="margin: 0; font-size: 3rem; color: var(--primary);">0</h1>
+                </div>
+                <div class="card" style="flex: 1;">
+                    <h3>Active Courses</h3>
+                    <h1 id="stat-courses" style="margin: 0; font-size: 3rem; color: var(--primary);">0</h1>
+                </div>
+            </div>
         </div>
-    </div>
 
-    <div id="app-container" class="hidden">
-        <aside>
-            <h2>Upasthiti</h2>
-            <div class="nav-item active" onclick="nav('dashboard')" id="nav-dashboard">Dashboard</div>
-            <div class="nav-item" onclick="nav('attendance')" id="nav-attendance">Live Class</div>
-            <div class="nav-item" onclick="nav('students')" id="nav-students">Manage Students</div>
-            <div style="flex:1"></div>
-            <div class="nav-item" onclick="logout()">Logout</div>
-        </aside>
-
-        <main>
-            <div id="view-dashboard">
-                <div class="header">
-                    <h2>Welcome, <span id="dash-inst-name" style="color: var(--primary);">Instructor</span></h2>
-                </div>
-                <div class="card">
-                    <h3>Your Stats</h3>
-                    <p>Total Students: <b id="stat-students">0</b></p>
-                    <p>Active Sessions: <b id="stat-sessions">0</b></p>
-                    <h3>Your Course List</h3>
-                    <ul id="course-list-ul" style="color: var(--secondary);"></ul>
+        <div id="view-courses" class="hidden">
+            <h2>Course Management</h2>
+            <div class="card">
+                <h3>Create New Course</h3>
+                <div class="row">
+                    <input type="text" id="new-course-name" placeholder="Course Name (e.g. CS101)" style="margin-bottom:0;">
+                    <button class="btn-sm" onclick="createCourse()" id="btn-create-course">Add Course</button>
                 </div>
             </div>
+            <div class="card">
+                <h3>Your Courses</h3>
+                <table id="courses-table">
+                    <thead><tr><th>ID</th><th>Name</th><th>Action</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
 
-            <div id="view-attendance" class="hidden">
-                <div class="header"><h2>Live Attendance</h2></div>
-                
-                <div id="att-setup" class="card">
-                    <h3>Start New Session</h3>
-                    <label>Course Name</label>
-                    <input list="prev-courses" id="att-course" placeholder="e.g. CS101" />
-                    <datalist id="prev-courses"></datalist>
-
-                    <label>Batch / Section</label>
-                    <input type="text" id="att-batch" placeholder="e.g. Batch A" />
-                    
-                    <label>Date</label>
-                    <input type="date" id="att-date" />
-                    
-                    <button class="btn-primary" onclick="startClass()">Start Class & Generate QR</button>
+        <div id="view-attendance" class="hidden">
+            <h2>Live Attendance</h2>
+            <div id="att-setup" class="card">
+                <h3>Start Session</h3>
+                <label>Select Course</label>
+                <select id="att-course-select"></select>
+                <label>Batch Name</label>
+                <input type="text" id="att-batch" placeholder="e.g. Lecture 1" />
+                <button onclick="startClass()" id="btn-start-class">Start Live Class</button>
+            </div>
+            <div id="att-active" class="card hidden">
+                <div class="row" style="justify-content: space-between;">
+                    <h3 id="active-session-title">Class Active</h3>
+                    <button class="btn-danger btn-sm" onclick="endClass()">End Class</button>
                 </div>
+                <div style="text-align: center; margin-top: 20px;">
+                    <div id="qrcode" style="display: inline-block; padding: 10px; border: 1px solid #ddd; border-radius: 8px;"></div>
+                    <p style="color: var(--text-sec); font-size: 0.9rem;">QR refreshes every 5s</p>
+                </div>
+            </div>
+        </div>
 
-                <div id="att-active" class="card hidden">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h3 id="active-title" style="margin:0;">Class Active</h3>
-                        <div style="display: flex; gap: 10px;">
-                            <button class="btn-success" style="width: auto; padding: 8px 16px;" onclick="downloadExcel()">Download Sheet</button>
-                            <button class="btn-danger" style="width: auto; padding: 8px 16px;" onclick="endClass()">End Class</button>
-                        </div>
+        <div id="view-students" class="hidden">
+            <h2>Student Management</h2>
+            
+            <div class="card">
+                <h3>Register Student</h3>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div class="row">
+                        <input type="text" id="s-roll" placeholder="Roll Number" style="margin:0;">
+                        <input type="text" id="s-name" placeholder="Full Name" style="margin:0;">
                     </div>
+                    <label style="font-size: 0.9rem; color: var(--text-sec); margin-top: 5px;">Assign to Course:</label>
+                    <select id="s-course-select" style="margin:0;"></select>
                     
-                    <div id="qr-container">
-                        <div id="qrcode"></div>
-                        <div id="timer">Refreshing code every 5 seconds...</div>
-                    </div>
+                    <input type="file" id="s-photo" accept="image/*" style="margin-top: 10px;">
+                    <button onclick="addStudent()" id="btn-add-student">Register Student (Auto-Crop)</button>
                 </div>
             </div>
 
-            <div id="view-students" class="hidden">
-                <div class="header"><h2>Student Management</h2></div>
-                <div class="card">
-                    <h3>Register Student</h3>
-                    <input type="text" id="s-roll" placeholder="Roll Number" />
-                    <input type="text" id="s-name" placeholder="Full Name" />
-                    <input type="file" id="s-photo" accept="image/*" />
-                    <button class="btn-primary" onclick="addStudent()">Register</button>
+            <div class="card">
+                <h3>Bulk Import (CSV/Excel)</h3>
+                <p style="font-size: 0.85rem; color: var(--text-sec); margin-top:0;">Columns required: roll_no, name, image_link</p>
+                
+                <label style="font-size: 0.9rem; color: var(--text-sec);">Assign all to Course:</label>
+                <select id="bulk-course-select"></select>
+
+                <div class="row" style="margin-top: 10px;">
+                    <input type="file" id="bulk-file" accept=".csv,.xlsx" style="margin:0;">
+                    <button class="btn-sm" style="background: #374151;" onclick="bulkUpload()" id="btn-bulk">Upload</button>
                 </div>
-                <div class="card">
-                    <h3>Bulk Import (CSV/Excel)</h3>
-                    <input type="file" id="bulk-file" accept=".csv,.xlsx" />
-                    <button class="btn-primary" style="background: #475569;" onclick="bulkUpload()">Upload File</button>
-                    <div id="bulk-log" style="margin-top:10px; font-size:0.9rem; white-space: pre-wrap;"></div>
-                </div>
+                <div id="bulk-log" style="margin-top:10px; font-size:0.85rem; white-space: pre-wrap; color: var(--text-sec);"></div>
             </div>
-        </main>
-    </div>
 
-    <script>
-        let token = localStorage.getItem('token');
-        let currentSessionId = null;
-        let qrInterval = null;
+            <div class="card">
+                <h3>Registered Students</h3>
+                <button class="btn-sm" style="margin-bottom: 10px; background: #6b7280;" onclick="loadStudents()">Refresh List</button>
+                <table id="students-table">
+                    <thead><tr><th>Roll</th><th>Name</th><th>Action</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</div>
 
-        if(token) showApp();
-        document.getElementById('att-date').valueAsDate = new Date();
+<script>
+    let token = localStorage.getItem('token');
+    let qrTimer = null;
 
-        // --- UI Logic ---
-        function toast(msg, type='normal') {
-            const t = document.getElementById('toast');
-            t.innerText = msg;
-            t.className = `toast show ${type}`;
-            setTimeout(() => t.className = 'toast', 3000);
+    if(token) showApp();
+
+    // --- SMART FETCHER ---
+    async function apiCall(url, method="GET", body=null, btnId=null) {
+        const btn = btnId ? document.getElementById(btnId) : null;
+        let originalText = "";
+        
+        if(btn) {
+            originalText = btn.innerText;
+            btn.innerHTML = `<span class="spinner"></span> Processing...`;
+            btn.classList.add('btn-loading');
         }
 
-        function toggleAuth(view) {
-            document.getElementById('form-login').classList.toggle('hidden');
-            document.getElementById('form-signup').classList.toggle('hidden');
-        }
+        const headers = { 'Authorization': `Bearer ${token}` };
+        if(!(body instanceof FormData)) headers['Content-Type'] = 'application/json';
 
-        function nav(view) {
-            ['dashboard', 'attendance', 'students'].forEach(v => {
-                document.getElementById('view-'+v).classList.add('hidden');
-                document.getElementById('nav-'+v).classList.remove('active');
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: headers,
+                body: body instanceof FormData ? body : (body ? JSON.stringify(body) : null)
             });
-            document.getElementById('view-'+view).classList.remove('hidden');
-            document.getElementById('nav-'+view).classList.add('active');
-            if(view === 'dashboard' || view === 'attendance') loadStats();
-        }
-
-        function showApp() {
-            document.getElementById('auth-container').classList.add('hidden');
-            document.getElementById('app-container').classList.remove('hidden');
-            document.getElementById('app-container').style.opacity = '1';
-            loadStats();
-        }
-
-        function logout() {
-            localStorage.removeItem('token');
-            location.reload();
-        }
-
-        // --- API ---
-        async function handleLogin() {
-            const u = document.getElementById('login-user').value;
-            const p = document.getElementById('login-pass').value;
-            const fd = new URLSearchParams(); fd.append('username', u); fd.append('password', p);
+            const data = await res.json();
             
-            const res = await fetch('/token', { method: 'POST', body: fd, headers: {'Content-Type': 'application/x-www-form-urlencoded'} });
-            if(res.ok) {
-                const data = await res.json();
-                localStorage.setItem('token', data.access_token);
-                token = data.access_token;
-                showApp();
-            } else toast("Invalid Credentials", "error");
-        }
-
-        async function handleSignup() {
-            const inst = document.getElementById('reg-inst').value;
-            const u = document.getElementById('reg-user').value;
-            const p = document.getElementById('reg-pass').value;
-            const res = await fetch('/api/instructor/register', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ institute_name: inst, username: u, password: p })
-            });
-            if(res.ok) { toast("Registered! Please Login.", "success"); toggleAuth('login'); }
-            else { const d = await res.json(); toast(d.detail, "error"); }
-        }
-
-        async function loadStats() {
-            const res = await fetch('/api/dashboard_stats', { headers: { 'Authorization': `Bearer ${token}` } });
-            if(res.ok) {
-                const data = await res.json();
-                document.getElementById('dash-inst-name').innerText = data.institute;
-                document.getElementById('stat-students').innerText = data.total_students;
-                document.getElementById('stat-sessions').innerText = data.active_courses;
-                
-                // Populate Course List & Dropdown
-                const ul = document.getElementById('course-list-ul');
-                const dl = document.getElementById('prev-courses');
-                ul.innerHTML = "";
-                dl.innerHTML = "";
-                
-                data.course_list.forEach(c => {
-                    ul.innerHTML += `<li>${c}</li>`;
-                    dl.innerHTML += `<option value="${c}">`;
-                });
+            if(!res.ok) throw new Error(data.detail || "Request Failed");
+            return data;
+        } catch(e) {
+            showToast(e.message, 'error');
+            return null;
+        } finally {
+            if(btn) {
+                btn.innerHTML = originalText;
+                btn.classList.remove('btn-loading');
             }
         }
+    }
 
-        async function startClass() {
-            const c = document.getElementById('att-course').value;
-            const b = document.getElementById('att-batch').value;
-            const d = document.getElementById('att-date').value;
+    // --- UI UTILS ---
+    function showToast(msg, type='normal') {
+        const t = document.getElementById('toast');
+        t.innerText = msg;
+        t.style.background = type === 'error' ? '#ef4444' : '#1f2937';
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+    }
 
-            const res = await fetch('/api/start_class', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ course_name: c, batch_name: b, date_str: d })
-            });
+    function toggleAuth() {
+        document.getElementById('form-login').classList.toggle('hidden');
+        document.getElementById('form-signup').classList.toggle('hidden');
+    }
 
-            if(res.ok) {
-                const data = await res.json();
-                currentSessionId = data.session_id;
-                document.getElementById('att-setup').classList.add('hidden');
-                document.getElementById('att-active').classList.remove('hidden');
-                document.getElementById('active-title').innerText = `${c} - ${b}`;
-                
-                updateQR();
-                qrInterval = setInterval(updateQR, 5000);
+    function nav(view) {
+        document.querySelectorAll('main > div').forEach(d => d.classList.add('hidden'));
+        document.querySelectorAll('.nav-item').forEach(d => d.classList.remove('active'));
+        document.getElementById('view-'+view).classList.remove('hidden');
+        document.getElementById('nav-'+view).classList.add('active');
+
+        if(view === 'dashboard') loadStats();
+        if(view === 'courses' || view === 'attendance' || view === 'students') loadCourses(); // Reload courses for dropdowns
+        if(view === 'students') loadStudents();
+    }
+
+    function showApp() {
+        document.getElementById('auth-container').classList.add('hidden');
+        document.getElementById('app-container').classList.remove('hidden');
+        nav('dashboard');
+    }
+
+    function logout() { localStorage.removeItem('token'); location.reload(); }
+
+    // --- AUTH ---
+    async function handleLogin() {
+        const u = document.getElementById('login-user').value;
+        const p = document.getElementById('login-pass').value;
+        const fd = new URLSearchParams(); fd.append('username', u); fd.append('password', p);
+        
+        const res = await fetch('/token', { method:'POST', body:fd, headers:{'Content-Type':'application/x-www-form-urlencoded'} });
+        if(res.ok) {
+            const data = await res.json();
+            localStorage.setItem('token', data.access_token);
+            token = data.access_token;
+            showApp();
+        } else showToast("Invalid Credentials", "error");
+    }
+
+    async function handleSignup() {
+        const res = await apiCall('/api/instructor/register', 'POST', {
+            institute_name: document.getElementById('reg-inst').value,
+            username: document.getElementById('reg-user').value,
+            password: document.getElementById('reg-pass').value
+        }, 'btn-signup');
+        if(res) { showToast("Registered! Please Login."); toggleAuth(); }
+    }
+
+    // --- DATA HANDLING ---
+    async function loadStats() {
+        const data = await apiCall('/api/dashboard_stats');
+        if(data) {
+            document.getElementById('stat-students').innerText = data.total_students;
+            document.getElementById('stat-courses').innerText = data.active_courses; 
+        }
+    }
+
+    // --- COURSES ---
+    async function loadCourses() {
+        const courses = await apiCall('/api/courses');
+        if(!courses) return;
+        
+        const tbody = document.querySelector('#courses-table tbody');
+        if(tbody) tbody.innerHTML = "";
+        
+        // Populate Dropdowns
+        const attSelect = document.getElementById('att-course-select');
+        const stuSelect = document.getElementById('s-course-select');
+        const bulkSelect = document.getElementById('bulk-course-select');
+        
+        [attSelect, stuSelect, bulkSelect].forEach(s => s.innerHTML = "");
+
+        courses.forEach(c => {
+            // Table
+            if(tbody) {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${c.id}</td>
+                        <td>${c.name}</td>
+                        <td><button class="btn-danger btn-sm" onclick="deleteCourse(${c.id})">Delete</button></td>
+                    </tr>`;
             }
-        }
+            // Dropdowns
+            [attSelect, stuSelect, bulkSelect].forEach(s => {
+                s.innerHTML += `<option value="${c.id}">${c.name}</option>`;
+            });
+        });
+    }
 
-        async function endClass() {
-            // Stop UI Loop
-            clearInterval(qrInterval);
-            
-            // Call API
-            await fetch('/api/end_class', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
-            
-            // Reset UI
-            toast("Class Ended Successfully", "success");
-            document.getElementById('att-active').classList.add('hidden');
-            document.getElementById('att-setup').classList.remove('hidden');
-            document.getElementById('qrcode').innerHTML = "";
+    async function createCourse() {
+        const name = document.getElementById('new-course-name').value;
+        if(!name) return;
+        const res = await apiCall('/api/courses', 'POST', { name: name }, 'btn-create-course');
+        if(res) { 
+            document.getElementById('new-course-name').value = "";
+            loadCourses(); 
+            showToast("Course Created");
         }
+    }
 
-        async function updateQR() {
-            const res = await fetch('/api/get_qr', { headers: { 'Authorization': `Bearer ${token}` } });
-            if(res.ok) {
-                const data = await res.json();
-                document.getElementById("qrcode").innerHTML = "";
-                new QRCode(document.getElementById("qrcode"), { text: data.qrToken, width: 250, height: 250 });
-            }
-        }
+    async function deleteCourse(id) {
+        if(!confirm("Are you sure? This deletes all related sessions.")) return;
+        await apiCall(`/api/courses/${id}`, 'DELETE');
+        loadCourses();
+    }
 
-        async function addStudent() {
-            const roll = document.getElementById('s-roll').value;
-            const name = document.getElementById('s-name').value;
-            const file = document.getElementById('s-photo').files[0];
-            const reader = new FileReader();
-            reader.onload = async function() {
-                const res = await fetch('/api/register', {
-                    method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ rollNumber: roll, name: name, photoBase64: reader.result })
-                });
-                if(res.ok) { toast("Student Added!", "success"); document.getElementById('s-roll').value=""; }
-                else { const d = await res.json(); toast(d.detail, "error"); }
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function downloadExcel() {
-            if(!currentSessionId) return;
-            fetch(`/api/download_excel/${currentSessionId}`, { headers: { 'Authorization': `Bearer ${token}` } })
-            .then(res => res.blob())
-            .then(blob => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = "Attendance.xlsx";
-                a.click();
+    // --- STUDENTS ---
+    async function loadStudents() {
+        const students = await apiCall('/api/students');
+        const tbody = document.querySelector('#students-table tbody');
+        tbody.innerHTML = "";
+        if(students) {
+            students.forEach(s => {
+                tbody.innerHTML += `
+                <tr>
+                    <td>${s.roll_number}</td>
+                    <td>${s.name}</td>
+                    <td><button class="btn-danger btn-sm" onclick="deleteStudent(${s.id})">Delete</button></td>
+                </tr>`;
             });
         }
-    </script>
+    }
+
+    async function addStudent() {
+        const roll = document.getElementById('s-roll').value;
+        const name = document.getElementById('s-name').value;
+        const courseId = document.getElementById('s-course-select').value;
+        const file = document.getElementById('s-photo').files[0];
+
+        if(!courseId) return showToast("Please create a course first", "error");
+        if(!file) return showToast("Please select photo", "error");
+
+        const reader = new FileReader();
+        reader.onload = async function() {
+            const res = await apiCall('/api/register', 'POST', {
+                rollNumber: roll, name: name, photoBase64: reader.result, course_id: parseInt(courseId)
+            }, 'btn-add-student');
+            if(res) { 
+                showToast("Student Added!"); 
+                document.getElementById('s-roll').value="";
+                loadStudents();
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    async function bulkUpload() {
+        const courseId = document.getElementById('bulk-course-select').value;
+        const file = document.getElementById('bulk-file').files[0];
+        
+        if(!courseId) return showToast("Please select a course", "error");
+        if(!file) return showToast("Select a CSV/Excel file", "error");
+
+        const fd = new FormData();
+        fd.append('file', file);
+
+        // We pass course_id as a query param
+        const res = await apiCall(`/api/bulk_register?course_id=${courseId}`, 'POST', fd, 'btn-bulk');
+        
+        if(res) {
+            let msg = `Added: ${res.added} students.\n`;
+            if(res.errors && res.errors.length > 0) {
+                msg += "Errors:\n" + res.errors.join("\n");
+            }
+            document.getElementById('bulk-log').innerText = msg;
+            loadStudents();
+        }
+    }
+
+    async function deleteStudent(id) {
+        if(!confirm("Delete this student?")) return;
+        await apiCall(`/api/students/${id}`, 'DELETE');
+        loadStudents();
+    }
+
+    // --- LIVE CLASS ---
+    async function startClass() {
+        // Now select.value is the Course ID, we need to find the name or change logic. 
+        // NOTE: In previous step, we sent course NAME to start_class.
+        // Let's grab the text from the dropdown instead of ID for now, or update API.
+        // Easier: update API to take ID, but to keep "start_class" simple let's send name:
+        
+        const select = document.getElementById('att-course-select');
+        const courseName = select.options[select.selectedIndex].text;
+        
+        const b = document.getElementById('att-batch').value;
+        
+        const res = await apiCall('/api/start_class', 'POST', {
+            course_name: courseName, batch_name: b, date_str: new Date().toISOString()
+        }, 'btn-start-class');
+
+        if(res) {
+            document.getElementById('att-setup').classList.add('hidden');
+            document.getElementById('att-active').classList.remove('hidden');
+            document.getElementById('active-session-title').innerText = `${courseName} - ${b}`;
+            updateQR();
+            qrTimer = setInterval(updateQR, 5000);
+        }
+    }
+
+    async function updateQR() {
+        const data = await apiCall('/api/get_qr');
+        if(data) {
+            document.getElementById("qrcode").innerHTML = "";
+            new QRCode(document.getElementById("qrcode"), { text: data.qrToken, width: 200, height: 200 });
+        }
+    }
+
+    async function endClass() {
+        clearInterval(qrTimer);
+        await apiCall('/api/end_class', 'POST');
+        document.getElementById('att-active').classList.add('hidden');
+        document.getElementById('att-setup').classList.remove('hidden');
+    }
+</script>
 </body>
 </html>

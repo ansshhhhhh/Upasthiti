@@ -7,10 +7,10 @@ import pandas as pd
 import uuid
 import requests
 import io
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -22,7 +22,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 
 # --- CONFIGURATION ---
-SECRET_KEY = os.getenv("SECRET_KEY", "upasthiti_secret_key_change_in_production")
+SECRET_KEY = "upasthiti_secret_key_change_in_production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120
 
@@ -32,12 +32,23 @@ class Instructor(SQLModel, table=True):
     hashed_password: str
     institute_name: str
 
+# --- UPDATED DATABASE MODELS ---
+class StudentCourseLink(SQLModel, table=True):
+    student_id: Optional[int] = Field(default=None, foreign_key="student.id", primary_key=True)
+    course_id: Optional[int] = Field(default=None, foreign_key="course.id", primary_key=True)
+
+class Course(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    institute_name: str
+    instructor_user: str
+
 class Student(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     institute_name: str = Field(index=True)
     roll_number: str = Field(index=True)
     name: str
-    face_encoding_json: str 
+    face_encoding_json: str
 
 class ClassSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -61,11 +72,12 @@ class AttendanceLog(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str
 
-# --- DB SETUP (Docker Friendly) ---
+# --- DB SETUP (UPDATED FOR DOCKER) ---
+# Check if we are running in Docker (we will create a 'data' folder)
 if not os.path.exists("data"):
     os.makedirs("data")
 
-sqlite_file_name = "data/upasthiti.db"
+sqlite_file_name = "data/upasthiti.db"  # CHANGED PATH
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
@@ -119,22 +131,50 @@ def decode_base64(base64_string: str):
         base64_string = base64_string.split(",")[1]
     return base64.b64decode(base64_string)
 
-# UPDATE THIS FUNCTION
 def get_encoding_from_image(img):
-    try:
-        # Convert BGR (OpenCV) to RGB (face_recognition)
-        rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # Generate 128-d encoding (HOG model is CPU friendly)
-        encodings = face_recognition.face_encodings(rgb_img)
-        
-        if len(encodings) > 0:
-            return encodings[0].tolist() # Return the first face found
-        return None
-    except Exception as e:
-        print(f"AI Error: {e}")
-        return None
+    # --- MEMORY OPTIMIZATION START ---
+    # Resize image if it's too large (width > 600px)
+    # This keeps RAM usage low so Render doesn't crash.
+    height, width = img.shape[:2]
+    max_width = 600
+    if width > max_width:
+        scaling_factor = max_width / float(width)
+        new_height = int(height * scaling_factor)
+        # resize the image
+        img = cv2.resize(img, (max_width, new_height))
+    # --- MEMORY OPTIMIZATION END ---
 
+    rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    encodings = face_recognition.face_encodings(rgb_img)
+    if len(encodings) > 0:
+        return encodings[0].tolist()
+    return None
+
+
+def crop_face(img):
+    rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    face_locations = face_recognition.face_locations(rgb_img)
+
+    if len(face_locations) == 0:
+        return None, "No face detected"
+
+    face_loc = max(face_locations, key=lambda f: (f[2] - f[0]) * (f[1] - f[3]))
+    top, right, bottom, left = face_loc
+
+    height, width, _ = img.shape
+    pad_h = int((bottom - top) * 0.2)
+    pad_w = int((right - left) * 0.2)
+
+    new_top = max(0, top - pad_h)
+    new_bottom = min(height, bottom + pad_h)
+    new_left = max(0, left - pad_w)
+    new_right = min(width, right + pad_w)
+
+    cropped_face = img[new_top:new_bottom, new_left:new_right]
+
+    cropped_face = cv2.resize(cropped_face, (400, 400))
+
+    return cropped_face, "Success"
 
 
 def validate_liveness(img):
@@ -149,11 +189,11 @@ def validate_liveness(img):
         return False, "Image too blurry/flat (Possible Screen Spoof)"
 
     hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-    bright_pixels = sum(hist[250:]) 
+    bright_pixels = sum(hist[250:]) # Count very bright pixels
     total_pixels = img.shape[0] * img.shape[1]
     bright_ratio = bright_pixels / total_pixels
 
-    if bright_ratio > 0.05:
+    if bright_ratio > 0.05: # If >5% of image is pure white
         return False, "Excessive Glare (Possible Screen Reflection)"
         
     dark_pixels = sum(hist[:10])
@@ -167,16 +207,7 @@ def validate_liveness(img):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
-    print("Loading AI Model...")
-    # This loads SFace into memory immediately when the server starts.
-    # It prevents the server from trying to load it while handling a user request.
-    try:
-        DeepFace.build_model("SFace")
-        print("AI Model Loaded Successfully.")
-    except Exception as e:
-        print(f"Warning: Model load failed (will retry on demand): {e}")
     yield
-
 
 app = FastAPI(title="Upasthiti API", lifespan=lifespan)
 
@@ -224,40 +255,62 @@ async def get_stats(user: Instructor = Depends(get_current_user), session: Sessi
         "course_list": courses
     }
 
-# --- ADD STUDENT ---
+# --- UPDATE THIS: Single Student Registration ---
 class StudentRegisterRequest(BaseModel):
     rollNumber: str
     name: str
     photoBase64: str
+    course_id: int  # <--- Added this
 
 @app.post("/api/register")
 async def register_student(body: StudentRegisterRequest, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
-    existing = session.exec(select(Student).where(Student.roll_number == body.rollNumber, Student.institute_name == user.institute_name)).first()
-    if existing:
-        raise HTTPException(400, "Student already registered in this institute")
-
-    img_bytes = decode_base64(body.photoBase64)
-    img = decode_image_bytes(img_bytes)
-    if img is None:
-        raise HTTPException(400, "Invalid Image")
-
-    # Use DeepFace Embedding
-    encoding = get_encoding_from_image(img)
-    if not encoding:
-        raise HTTPException(400, "No face found in photo")
+    # 1. Check if student exists in the INSTITUTE
+    student = session.exec(select(Student).where(Student.roll_number == body.rollNumber, Student.institute_name == user.institute_name)).first()
     
-    new_student = Student(
-        institute_name=user.institute_name,
-        roll_number=body.rollNumber,
-        name=body.name,
-        face_encoding_json=json.dumps(encoding)
-    )
-    session.add(new_student)
-    session.commit()
-    return {"success": True, "message": "Student Added"}
+    # 2. If new student, create them
+    if not student:
+        img_bytes = decode_base64(body.photoBase64)
+        img = decode_image_bytes(img_bytes)
+        if img is None: raise HTTPException(400, "Invalid Image")
 
+        cropped_img, msg = crop_face(img) # Use the cropper we made earlier!
+        if cropped_img is None: raise HTTPException(400, f"Registration Failed: {msg}")
+
+        encoding = get_encoding_from_image(cropped_img)
+        if not encoding: raise HTTPException(400, "No face found")
+        
+        student = Student(
+            institute_name=user.institute_name,
+            roll_number=body.rollNumber,
+            name=body.name,
+            face_encoding_json=json.dumps(encoding)
+        )
+        session.add(student)
+        session.commit()
+        session.refresh(student)
+
+    # 3. Link Student to Course (Many-to-Many)
+    # Check if link already exists
+    link = session.exec(select(StudentCourseLink).where(
+        StudentCourseLink.student_id == student.id, 
+        StudentCourseLink.course_id == body.course_id
+    )).first()
+
+    if not link:
+        new_link = StudentCourseLink(student_id=student.id, course_id=body.course_id)
+        session.add(new_link)
+        session.commit()
+
+    return {"success": True, "message": "Student Registered & Linked to Course"}
+
+# --- UPDATE THIS: Bulk Registration ---
 @app.post("/api/bulk_register")
-async def bulk_register(file: UploadFile = File(...), user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+async def bulk_register(course_id: int, file: UploadFile = File(...), user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    # Check if course belongs to user
+    course = session.get(Course, course_id)
+    if not course or course.institute_name != user.institute_name:
+        raise HTTPException(403, "Invalid Course")
+
     contents = await file.read()
     try:
         if file.filename.endswith('.csv'):
@@ -267,39 +320,57 @@ async def bulk_register(file: UploadFile = File(...), user: Instructor = Depends
     except:
         raise HTTPException(400, "Invalid file format")
 
-    errors = []
     success_count = 0
-    
+    errors = []
+
     for _, row in df.iterrows():
         roll = str(row['roll_no']).strip()
         name = str(row['name']).strip()
-        link = str(row['image_link']).strip()
+        link_url = str(row['image_link']).strip()
 
-        if session.exec(select(Student).where(Student.roll_number == roll, Student.institute_name == user.institute_name)).first():
-            continue
-
-        try:
-            response = requests.get(link, timeout=10)
-            if response.status_code == 200:
-                img = decode_image_bytes(response.content)
-                encoding = get_encoding_from_image(img) # Uses DeepFace now
-                if encoding:
-                    session.add(Student(
-                        institute_name=user.institute_name,
-                        roll_number=roll,
-                        name=name,
-                        face_encoding_json=json.dumps(encoding)
-                    ))
-                    success_count += 1
+        # 1. Find or Create Student
+        student = session.exec(select(Student).where(Student.roll_number == roll, Student.institute_name == user.institute_name)).first()
+        
+        if not student:
+            try:
+                response = requests.get(link_url, timeout=10)
+                if response.status_code == 200:
+                    img = decode_image_bytes(response.content)
+                    cropped_img, _ = crop_face(img) # Auto-crop here too
+                    if cropped_img is None: cropped_img = img 
+                    
+                    encoding = get_encoding_from_image(cropped_img)
+                    if encoding:
+                        student = Student(
+                            institute_name=user.institute_name,
+                            roll_number=roll,
+                            name=name,
+                            face_encoding_json=json.dumps(encoding)
+                        )
+                        session.add(student)
+                        session.commit()
+                        session.refresh(student)
+                    else:
+                        errors.append(f"{roll}: No face found")
+                        continue
                 else:
-                    errors.append(f"{roll}: No face found")
-            else:
-                errors.append(f"{roll}: Image download failed")
-        except:
-            errors.append(f"{roll}: Error")
+                    errors.append(f"{roll}: Image download failed")
+                    continue
+            except:
+                errors.append(f"{roll}: Network Error")
+                continue
+
+        # 2. Link to Course
+        if student:
+            link = session.exec(select(StudentCourseLink).where(StudentCourseLink.student_id == student.id, StudentCourseLink.course_id == course_id)).first()
+            if not link:
+                session.add(StudentCourseLink(student_id=student.id, course_id=course_id))
+                success_count += 1
 
     session.commit()
     return {"success": True, "added": success_count, "errors": errors}
+
+
 
 # --- CLASS SESSION ---
 class CreateSessionRequest(BaseModel):
@@ -373,6 +444,47 @@ async def download_excel(session_id: int, user: Instructor = Depends(get_current
     df.to_excel(filename, index=False)
     return FileResponse(path=filename, filename=filename, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
+
+# --- COURSE MANAGEMENT ---
+class CourseCreate(BaseModel):
+    name: str
+
+@app.post("/api/courses")
+async def create_course(body: CourseCreate, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    new_course = Course(name=body.name, institute_name=user.institute_name, instructor_user=user.username)
+    session.add(new_course)
+    session.commit()
+    return {"success": True, "id": new_course.id, "name": new_course.name}
+
+@app.get("/api/courses")
+async def get_courses(user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    return session.exec(select(Course).where(Course.institute_name == user.institute_name)).all()
+
+@app.delete("/api/courses/{course_id}")
+async def delete_course(course_id: int, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    course = session.get(Course, course_id)
+    if not course or course.institute_name != user.institute_name:
+        raise HTTPException(403, "Not Authorized")
+    session.delete(course)
+    session.commit()
+    return {"success": True}
+
+# --- STUDENT MANAGEMENT (List & Delete) ---
+@app.get("/api/students")
+async def get_students(user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    # Return light version (no heavy face encodings) for UI list
+    students = session.exec(select(Student).where(Student.institute_name == user.institute_name)).all()
+    return [{"id": s.id, "roll_number": s.roll_number, "name": s.name} for s in students]
+
+@app.delete("/api/students/{student_id}")
+async def delete_student(student_id: int, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    student = session.get(Student, student_id)
+    if not student or student.institute_name != user.institute_name:
+        raise HTTPException(403, "Not Authorized")
+    session.delete(student)
+    session.commit()
+    return {"success": True}
+
 # --- MOBILE APP ENDPOINT ---
 
 class AttendanceRequest(BaseModel):
@@ -415,9 +527,11 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     if img is None: 
         raise HTTPException(status_code=400, detail="Invalid image")
 
-    # 5. ANTI-SPOOFING (LIVENESS) CHECK
+    # --- 5. NEW: ANTI-SPOOFING (LIVENESS) CHECK ---
     is_live, reason = validate_liveness(img)
     if not is_live:
+        print(f"SPOOF DETECTED for {body.rollNumber}: {reason}")
+        # We return 400 Bad Request with the reason
         raise HTTPException(status_code=400, detail=f"Liveness Check Failed: {reason}")
 
     # 6. FACE MATCH
@@ -432,27 +546,14 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     if not student:
         raise HTTPException(status_code=404, detail=f"Student {body.rollNumber} not found")
 
+    live_encoding = get_encoding_from_image(img)
+    if not live_encoding: 
+        raise HTTPException(status_code=400, detail="No face detected")
     
-    try:
-        # 1. Get Live Encoding
-        live_encoding = get_encoding_from_image(img)
-        if not live_encoding:
-             raise HTTPException(status_code=400, detail="No face detected in live photo")
-
-        # 2. Get Stored Encoding
-        stored_encoding = json.loads(student.face_encoding_json)
-
-        # 3. Compare
-        # face_recognition.compare_faces returns a list of True/False
-        # We use a tolerance of 0.5 (Strict) or 0.6 (Standard)
-        match = face_recognition.compare_faces([np.array(stored_encoding)], np.array(live_encoding), tolerance=0.5)
-
-        if not match[0]:
-             raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
-
-    except Exception as e:
-        print(f"Match Error: {e}")
-        raise HTTPException(status_code=500, detail="Error verifying face (Data format mismatch? Re-register student)")
+    stored_encoding = np.array(json.loads(student.face_encoding_json))
+    match = face_recognition.compare_faces([stored_encoding], np.array(live_encoding), tolerance=0.5)
+    if not match[0]: 
+        raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
 
     # 7. MARK ATTENDANCE
     existing = session.exec(select(AttendanceLog).where(
@@ -474,6 +575,4 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     
     return {"success": True, "message": "Attendance Marked Successfully"}
 
-# Serve static files if folder exists
-if os.path.exists("static"):
-    app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
