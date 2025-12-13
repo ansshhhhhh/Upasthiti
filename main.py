@@ -7,32 +7,31 @@ import pandas as pd
 import uuid
 import requests
 import io
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from contextlib import asynccontextmanager
-import os
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select, func
+from sqlalchemy import UniqueConstraint
+from sqlalchemy import text
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
-# --- CONFIGURATION ---
 SECRET_KEY = "upasthiti_secret_key_change_in_production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 120
 
-# --- DATABASE MODELS ---
 class Instructor(SQLModel, table=True):
     username: str = Field(primary_key=True)
     hashed_password: str
     institute_name: str
 
-# --- UPDATED DATABASE MODELS ---
 class StudentCourseLink(SQLModel, table=True):
     student_id: Optional[int] = Field(default=None, foreign_key="student.id", primary_key=True)
     course_id: Optional[int] = Field(default=None, foreign_key="course.id", primary_key=True)
@@ -49,11 +48,13 @@ class Student(SQLModel, table=True):
     roll_number: str = Field(index=True)
     name: str
     face_encoding_json: str
+    device_id: Optional[str] = Field(default=None)
 
 class ClassSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     instructor_user: str
     institute_name: str
+    course_id: int = Field(foreign_key="course.id")
     course_name: str
     batch_name: str
     date_str: str 
@@ -71,24 +72,44 @@ class AttendanceLog(SQLModel, table=True):
     student_roll: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     status: str
+    __table_args__ = (UniqueConstraint("session_id", "student_roll", name="unique_attendance"),)
 
-# --- DB SETUP (UPDATED FOR DOCKER) ---
-# Check if we are running in Docker (we will create a 'data' folder)
 if not os.path.exists("data"):
     os.makedirs("data")
 
-sqlite_file_name = "data/upasthiti.db"  # CHANGED PATH
+sqlite_file_name = "data/upasthiti.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
+    
+    with engine.connect() as conn:
+        # 1. Migrate STUDENT table (device_id)
+        try:
+            conn.execute(text("SELECT device_id FROM student LIMIT 1"))
+        except Exception:
+            print("⚠️ Migration: Adding 'device_id' to Student table...")
+            conn.execute(text("ALTER TABLE student ADD COLUMN device_id VARCHAR"))
+            conn.commit()
+            print("✅ Student Migration Successful.")
+
+        # 2. Migrate CLASSSESSION table (course_id)
+        try:
+            conn.execute(text("SELECT course_id FROM classsession LIMIT 1"))
+        except Exception:
+            print("⚠️ Migration: Adding 'course_id' to ClassSession table...")
+            # We add it as INTEGER. 
+            # Note: SQLite doesn't easily support adding NOT NULL constraints to existing tables with data
+            # so we add it as a nullable integer for now to be safe.
+            conn.execute(text("ALTER TABLE classsession ADD COLUMN course_id INTEGER"))
+            conn.commit()
+            print("✅ ClassSession Migration Successful.")
 
 def get_session():
     with Session(engine) as session:
         yield session
 
-# --- SECURITY UTILS ---
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -117,8 +138,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: Session
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
-# --- HELPER: IMAGE PROCESSING & ANTI-SPOOFING ---
-
 def decode_image_bytes(image_data):
     try:
         nparr = np.frombuffer(image_data, np.uint8)
@@ -132,24 +151,18 @@ def decode_base64(base64_string: str):
     return base64.b64decode(base64_string)
 
 def get_encoding_from_image(img):
-    # --- MEMORY OPTIMIZATION START ---
-    # Resize image if it's too large (width > 600px)
-    # This keeps RAM usage low so Render doesn't crash.
     height, width = img.shape[:2]
     max_width = 600
     if width > max_width:
         scaling_factor = max_width / float(width)
         new_height = int(height * scaling_factor)
-        # resize the image
         img = cv2.resize(img, (max_width, new_height))
-    # --- MEMORY OPTIMIZATION END ---
 
     rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     encodings = face_recognition.face_encodings(rgb_img)
     if len(encodings) > 0:
         return encodings[0].tolist()
     return None
-
 
 def crop_face(img):
     rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -171,29 +184,22 @@ def crop_face(img):
     new_right = min(width, right + pad_w)
 
     cropped_face = img[new_top:new_bottom, new_left:new_right]
-
     cropped_face = cv2.resize(cropped_face, (400, 400))
 
     return cropped_face, "Success"
 
-
 def validate_liveness(img):
-    """
-    Checks if the image is likely a real face or a screen/photo spoof.
-    Returns: (is_live: bool, reason: str)
-    """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
-    
     if blur_score < 50: 
         return False, "Image too blurry/flat (Possible Screen Spoof)"
 
     hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-    bright_pixels = sum(hist[250:]) # Count very bright pixels
+    bright_pixels = sum(hist[250:]) 
     total_pixels = img.shape[0] * img.shape[1]
     bright_ratio = bright_pixels / total_pixels
 
-    if bright_ratio > 0.05: # If >5% of image is pure white
+    if bright_ratio > 0.05: 
         return False, "Excessive Glare (Possible Screen Reflection)"
         
     dark_pixels = sum(hist[:10])
@@ -203,15 +209,12 @@ def validate_liveness(img):
 
     return True, "Live"
 
-# --- APP LIFECYCLE ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
     yield
 
 app = FastAPI(title="Upasthiti API", lifespan=lifespan)
-
-# --- AUTH ROUTES ---
 
 class InstructorRegister(BaseModel):
     username: str
@@ -241,39 +244,40 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Sessi
     access_token = create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer", "institute": user.institute_name}
 
-# --- DASHBOARD STATS ---
+# --- DASHBOARD STATS (FIXED) ---
 @app.get("/api/dashboard_stats")
 async def get_stats(user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    # 1. Count Total Students
     total_students = session.exec(select(func.count(Student.id)).where(Student.institute_name == user.institute_name)).one()
-    courses = session.exec(select(ClassSession.course_name).where(ClassSession.institute_name == user.institute_name).distinct()).all()
-    active_sessions = session.exec(select(func.count(ClassSession.id)).where(ClassSession.institute_name == user.institute_name, ClassSession.is_active == True)).one()
+    
+    # 2. Get All Courses
+    courses = session.exec(select(Course).where(Course.institute_name == user.institute_name)).all()
+    course_names = [c.name for c in courses]
 
+    # 3. FIX: Return total 'len(courses)' instead of 'active_sessions'
     return {
         "institute": user.institute_name,
         "total_students": total_students,
-        "active_courses": active_sessions,
-        "course_list": courses
+        "active_courses": len(courses), # <--- Changed this to show Total Courses
+        "course_list": course_names
     }
 
-# --- UPDATE THIS: Single Student Registration ---
 class StudentRegisterRequest(BaseModel):
     rollNumber: str
     name: str
     photoBase64: str
-    course_id: int  # <--- Added this
+    course_id: int 
 
 @app.post("/api/register")
 async def register_student(body: StudentRegisterRequest, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
-    # 1. Check if student exists in the INSTITUTE
     student = session.exec(select(Student).where(Student.roll_number == body.rollNumber, Student.institute_name == user.institute_name)).first()
     
-    # 2. If new student, create them
     if not student:
         img_bytes = decode_base64(body.photoBase64)
         img = decode_image_bytes(img_bytes)
         if img is None: raise HTTPException(400, "Invalid Image")
 
-        cropped_img, msg = crop_face(img) # Use the cropper we made earlier!
+        cropped_img, msg = crop_face(img)
         if cropped_img is None: raise HTTPException(400, f"Registration Failed: {msg}")
 
         encoding = get_encoding_from_image(cropped_img)
@@ -289,8 +293,6 @@ async def register_student(body: StudentRegisterRequest, user: Instructor = Depe
         session.commit()
         session.refresh(student)
 
-    # 3. Link Student to Course (Many-to-Many)
-    # Check if link already exists
     link = session.exec(select(StudentCourseLink).where(
         StudentCourseLink.student_id == student.id, 
         StudentCourseLink.course_id == body.course_id
@@ -303,10 +305,8 @@ async def register_student(body: StudentRegisterRequest, user: Instructor = Depe
 
     return {"success": True, "message": "Student Registered & Linked to Course"}
 
-# --- UPDATE THIS: Bulk Registration ---
 @app.post("/api/bulk_register")
 async def bulk_register(course_id: int, file: UploadFile = File(...), user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
-    # Check if course belongs to user
     course = session.get(Course, course_id)
     if not course or course.institute_name != user.institute_name:
         raise HTTPException(403, "Invalid Course")
@@ -324,11 +324,13 @@ async def bulk_register(course_id: int, file: UploadFile = File(...), user: Inst
     errors = []
 
     for _, row in df.iterrows():
-        roll = str(row['roll_no']).strip()
-        name = str(row['name']).strip()
-        link_url = str(row['image_link']).strip()
+        try:
+            roll = str(row['roll_no']).strip()
+            name = str(row['name']).strip()
+            link_url = str(row['image_link']).strip()
+        except:
+            continue
 
-        # 1. Find or Create Student
         student = session.exec(select(Student).where(Student.roll_number == roll, Student.institute_name == user.institute_name)).first()
         
         if not student:
@@ -336,7 +338,9 @@ async def bulk_register(course_id: int, file: UploadFile = File(...), user: Inst
                 response = requests.get(link_url, timeout=10)
                 if response.status_code == 200:
                     img = decode_image_bytes(response.content)
-                    cropped_img, _ = crop_face(img) # Auto-crop here too
+                    if img is None: continue
+
+                    cropped_img, _ = crop_face(img)
                     if cropped_img is None: cropped_img = img 
                     
                     encoding = get_encoding_from_image(cropped_img)
@@ -360,7 +364,6 @@ async def bulk_register(course_id: int, file: UploadFile = File(...), user: Inst
                 errors.append(f"{roll}: Network Error")
                 continue
 
-        # 2. Link to Course
         if student:
             link = session.exec(select(StudentCourseLink).where(StudentCourseLink.student_id == student.id, StudentCourseLink.course_id == course_id)).first()
             if not link:
@@ -370,16 +373,18 @@ async def bulk_register(course_id: int, file: UploadFile = File(...), user: Inst
     session.commit()
     return {"success": True, "added": success_count, "errors": errors}
 
-
-
-# --- CLASS SESSION ---
 class CreateSessionRequest(BaseModel):
+    course_id: int 
     course_name: str
     batch_name: str
     date_str: str
 
 @app.post("/api/start_class")
 async def start_class(body: CreateSessionRequest, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    course = session.get(Course, body.course_id)
+    if not course or course.institute_name != user.institute_name:
+        raise HTTPException(400, "Invalid Course ID")
+
     existing = session.exec(select(ClassSession).where(ClassSession.instructor_user == user.username, ClassSession.is_active == True)).all()
     for s in existing:
         s.is_active = False
@@ -388,7 +393,8 @@ async def start_class(body: CreateSessionRequest, user: Instructor = Depends(get
     new_session = ClassSession(
         instructor_user=user.username,
         institute_name=user.institute_name,
-        course_name=body.course_name,
+        course_id=body.course_id,
+        course_name=course.name,
         batch_name=body.batch_name,
         date_str=body.date_str,
         is_active=True
@@ -413,11 +419,18 @@ async def get_qr(user: Instructor = Depends(get_current_user), session: Session 
     if not active_session:
         raise HTTPException(400, "No active class")
 
+    # 1. Generate new Token
     token_str = str(uuid.uuid4())
     qr_entry = ActiveQR(session_id=active_session.id, qr_token=token_str, created_at=datetime.now(timezone.utc))
     session.add(qr_entry)
+    
+    # 2. NEW: Count present students for this session
+    present_count = session.exec(select(func.count(AttendanceLog.id)).where(AttendanceLog.session_id == active_session.id)).one()
+    
     session.commit()
-    return {"qrToken": token_str}
+    
+    # 3. Return both Token AND Count
+    return {"qrToken": token_str, "student_count": present_count}
 
 @app.get("/api/download_excel/{session_id}")
 async def download_excel(session_id: int, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
@@ -441,11 +454,70 @@ async def download_excel(session_id: int, user: Instructor = Depends(get_current
     
     df = pd.DataFrame(data, columns=["Roll Number", "Name", "Time", "Status"])
     filename = f"Attendance_{class_session.course_name}_{class_session.batch_name}.xlsx"
-    df.to_excel(filename, index=False)
-    return FileResponse(path=filename, filename=filename, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    output.seek(0)
+    return StreamingResponse(output, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={"Content-Disposition": f"attachment; filename={filename}"})
 
+@app.get("/api/download_course_report/{course_id}")
+async def download_course_report(course_id: int, user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
+    course = session.get(Course, course_id)
+    if not course or course.institute_name != user.institute_name:
+        raise HTTPException(403, "Access Denied")
 
-# --- COURSE MANAGEMENT ---
+    links = session.exec(select(StudentCourseLink).where(StudentCourseLink.course_id == course_id)).all()
+    student_ids = [l.student_id for l in links]
+    
+    if not student_ids:
+        raise HTTPException(400, "No students enrolled in this course")
+
+    students = session.exec(select(Student).where(Student.id.in_(student_ids))).all()
+    student_map = {s.roll_number: s.name for s in students}
+    all_rolls = list(student_map.keys())
+
+    sessions = session.exec(select(ClassSession).where(
+        ClassSession.course_id == course_id
+    ).order_by(ClassSession.date_str)).all()
+    
+    if not sessions:
+        raise HTTPException(400, "No classes conducted yet")
+
+    session_map = {s.id: s.date_str[:10] for s in sessions}
+    session_ids = list(session_map.keys())
+
+    logs = session.exec(select(AttendanceLog).where(AttendanceLog.session_id.in_(session_ids))).all()
+
+    data = []
+    attendance_lookup = set((log.student_roll, log.session_id) for log in logs)
+
+    for roll in all_rolls:
+        row = {
+            "Roll Number": roll,
+            "Name": student_map.get(roll, "Unknown")
+        }
+        
+        for sess in sessions:
+            date_col = f"{sess.date_str[:10]} ({sess.batch_name})"
+            if (roll, sess.id) in attendance_lookup:
+                row[date_col] = "P"
+            else:
+                row[date_col] = "A"
+        
+        data.append(row)
+
+    df = pd.DataFrame(data)
+    cols = ["Roll Number", "Name"] + [c for c in df.columns if c not in ["Roll Number", "Name"]]
+    df = df[cols]
+
+    filename = f"Master_Attendance_{course.name}.xlsx"
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name="Attendance")
+    output.seek(0)
+
+    return StreamingResponse(output, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={"Content-Disposition": f"attachment; filename={filename}"})
+
 class CourseCreate(BaseModel):
     name: str
 
@@ -465,14 +537,17 @@ async def delete_course(course_id: int, user: Instructor = Depends(get_current_u
     course = session.get(Course, course_id)
     if not course or course.institute_name != user.institute_name:
         raise HTTPException(403, "Not Authorized")
+    
+    links = session.exec(select(StudentCourseLink).where(StudentCourseLink.course_id == course_id)).all()
+    for link in links:
+        session.delete(link)
+        
     session.delete(course)
     session.commit()
     return {"success": True}
 
-# --- STUDENT MANAGEMENT (List & Delete) ---
 @app.get("/api/students")
 async def get_students(user: Instructor = Depends(get_current_user), session: Session = Depends(get_session)):
-    # Return light version (no heavy face encodings) for UI list
     students = session.exec(select(Student).where(Student.institute_name == user.institute_name)).all()
     return [{"id": s.id, "roll_number": s.roll_number, "name": s.name} for s in students]
 
@@ -481,11 +556,14 @@ async def delete_student(student_id: int, user: Instructor = Depends(get_current
     student = session.get(Student, student_id)
     if not student or student.institute_name != user.institute_name:
         raise HTTPException(403, "Not Authorized")
+    
+    links = session.exec(select(StudentCourseLink).where(StudentCourseLink.student_id == student_id)).all()
+    for link in links:
+        session.delete(link)
+
     session.delete(student)
     session.commit()
     return {"success": True}
-
-# --- MOBILE APP ENDPOINT ---
 
 class AttendanceRequest(BaseModel):
     rollNumber: str
@@ -495,8 +573,6 @@ class AttendanceRequest(BaseModel):
 
 @app.post("/api/attendance")
 async def mark_attendance(body: AttendanceRequest, session: Session = Depends(get_session)):
-    
-    # 1. PARSE TIMESTAMPS
     try:
         clean_ts = body.timestamp.replace("Z", "")
         client_time = datetime.fromisoformat(clean_ts)
@@ -509,32 +585,27 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid timestamp format")
 
-    # 2. VERIFY QR
     statement = select(ActiveQR).where(ActiveQR.qr_token == body.qrCodeData)
     qr_entry = session.exec(statement).first()
     if not qr_entry:
         raise HTTPException(status_code=404, detail="Invalid QR Code")
 
-    # 3. SYNC CHECK
-    qr_time = qr_entry.created_at.replace(tzinfo=timezone.utc)
-    time_diff = (client_time - qr_time).total_seconds()
-    if not (-60 <= time_diff <= 60):
-        raise HTTPException(status_code=400, detail=f"Timing Mismatch: Diff is {time_diff:.1f}s")
+    qr_created_at = qr_entry.created_at.replace(tzinfo=timezone.utc)
+    server_now = datetime.now(timezone.utc)
+    qr_age = (server_now - qr_created_at).total_seconds()
+    
+    if qr_age > 20:
+        raise HTTPException(status_code=400, detail="QR Code Expired. Scan the new one.")
 
-    # 4. DECODE IMAGE
     img_bytes = decode_base64(body.photoBase64)
     img = decode_image_bytes(img_bytes)
     if img is None: 
         raise HTTPException(status_code=400, detail="Invalid image")
 
-    # --- 5. NEW: ANTI-SPOOFING (LIVENESS) CHECK ---
     is_live, reason = validate_liveness(img)
     if not is_live:
-        print(f"SPOOF DETECTED for {body.rollNumber}: {reason}")
-        # We return 400 Bad Request with the reason
         raise HTTPException(status_code=400, detail=f"Liveness Check Failed: {reason}")
 
-    # 6. FACE MATCH
     class_session = session.get(ClassSession, qr_entry.session_id)
     if not class_session or not class_session.is_active:
         raise HTTPException(status_code=400, detail="Class Session has ended")
@@ -546,6 +617,14 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     if not student:
         raise HTTPException(status_code=404, detail=f"Student {body.rollNumber} not found")
 
+    is_enrolled = session.exec(select(StudentCourseLink).where(
+        StudentCourseLink.student_id == student.id,
+        StudentCourseLink.course_id == class_session.course_id
+    )).first()
+
+    if not is_enrolled:
+        raise HTTPException(status_code=403, detail="Student is not enrolled in this course")
+
     live_encoding = get_encoding_from_image(img)
     if not live_encoding: 
         raise HTTPException(status_code=400, detail="No face detected")
@@ -555,7 +634,6 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     if not match[0]: 
         raise HTTPException(status_code=401, detail="Face Mismatch: Verification Failed")
 
-    # 7. MARK ATTENDANCE
     existing = session.exec(select(AttendanceLog).where(
         AttendanceLog.session_id == class_session.id, 
         AttendanceLog.student_roll == body.rollNumber
@@ -564,16 +642,28 @@ async def mark_attendance(body: AttendanceRequest, session: Session = Depends(ge
     if existing: 
         return {"success": True, "message": "Attendance already marked."}
 
-    new_log = AttendanceLog(
-        session_id=class_session.id, 
-        student_roll=body.rollNumber, 
-        timestamp=datetime.now(timezone.utc), 
-        status="PRESENT"
-    )
-    session.add(new_log)
-    session.commit()
+    try:
+        new_log = AttendanceLog(
+            session_id=class_session.id, 
+            student_roll=body.rollNumber, 
+            timestamp=datetime.now(timezone.utc), 
+            status="PRESENT"
+        )
+        session.add(new_log)
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"success": True, "message": "Attendance already marked."}
     
     return {"success": True, "message": "Attendance Marked Successfully"}
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("static/icon.png")
+
+@app.get("/student")
+async def student_ui():
+    return FileResponse("static/student.html")
 
 app.mount("/static", StaticFiles(directory="static"), name="static_assets")
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

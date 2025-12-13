@@ -3,4 +3,5 @@ __pycache__/
 .git/
 .env
 upasthiti.db
+data/
 *.pyc
