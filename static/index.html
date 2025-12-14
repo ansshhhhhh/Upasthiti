@@ -6,125 +6,231 @@
     <title>Upasthiti | Smart Attendance</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="icon" type="image/png" href="/static/icon.png"> 
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="icon" type="image/png" href="/static/icon.png">
+
     <style>
-        /* (KEEP ALL YOUR CSS EXACTLY THE SAME - Just shortened for brevity here) */
         :root { --primary: #4f46e5; --primary-hover: #4338ca; --text-main: #111827; --text-sec: #6b7280; --bg-body: #f3f4f6; --surface: #ffffff; --border: #e5e7eb; --danger: #ef4444; --success: #10b981; }
         body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; width: 100vw; overflow: hidden; background-color: var(--bg-body); color: var(--text-main); }
-        #auth-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; position: absolute; top: 0; left: 0; z-index: 999; background-color: #f9fafb; background-image: radial-gradient(#e5e7eb 1px, transparent 1px); background-size: 24px 24px; }
-        .auth-card { background: var(--surface); padding: 48px; border-radius: 16px; width: 100%; max-width: 380px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid var(--border); text-align: center; }
-        .auth-card img { width: 120px; height: auto; margin-bottom: 24px; display: block; margin-left: auto; margin-right: auto; }
-        /* ... (KEEP REST OF CSS) ... */
+        
         #app-container { display: flex; width: 100%; height: 100%; }
         aside { width: 260px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 24px; flex-shrink: 0; }
         .logo-container { text-align: center; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
-        .logo-container img { width: 110px; height: auto; }
+        .logo-container img { width: 120px; height: auto; }
+        
+        /* User Profile Badge */
+        .user-profile { margin-top: auto; padding-top: 20px; border-top: 1px solid var(--border); }
+        .user-info { margin-bottom: 12px; }
+        .user-info strong { display: block; color: var(--text-main); font-size: 0.95rem; }
+        .user-info span { display: block; color: var(--text-sec); font-size: 0.85rem; }
+        .user-actions { display: flex; gap: 8px; }
+        .user-actions button { flex: 1; padding: 8px; font-size: 0.85rem; }
+
         main { flex: 1; padding: 40px; overflow-y: auto; background: var(--bg-body); width: 100%; box-sizing: border-box; }
-        input, select { width: 100%; padding: 12px 14px; margin: 8px 0 20px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; font-size: 0.95rem; background: #fff; transition: all 0.2s ease; color: var(--text-main); }
-        input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-        button { width: 100%; padding: 12px; border: none; border-radius: 8px; background: var(--primary); color: white; font-weight: 600; font-size: 0.95rem; cursor: pointer; transition: background 0.2s; }
+        
+        input, select, textarea { width: 100%; padding: 12px 14px; margin: 8px 0 20px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; font-size: 0.95rem; background: #fff; color: var(--text-main); font-family: inherit; }
+        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+        
+        button { width: 100%; padding: 12px; border: none; border-radius: 8px; background: var(--primary); color: white; font-weight: 600; font-size: 0.95rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.2s; }
         button:hover { background: var(--primary-hover); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        
         .btn-danger { background: var(--danger); } .btn-danger:hover { background: #dc2626; }
         .btn-success { background: var(--success); } .btn-success:hover { background: #059669; }
         .btn-sm { width: auto; white-space: nowrap; padding: 8px 16px; font-size: 0.85rem; margin: 0; }
-        .card { background: var(--surface); padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05); border: 1px solid var(--border); margin-bottom: 24px; width: 100%; box-sizing: border-box; }
-        .card h3 { margin-top: 0; margin-bottom: 20px; color: var(--text-main); font-size: 1.1rem; font-weight: 600; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+        .btn-outline:hover { background: #f3f4f6; }
+        
+        .card { background: var(--surface); padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05); border: 1px solid var(--border); margin-bottom: 24px; }
+        .card h3 { margin-top: 0; margin-bottom: 20px; }
         .row { display: flex; gap: 16px; align-items: center; width: 100%; }
-        .row input, .row select { flex: 1; margin-bottom: 0; }
-        .nav-item { padding: 12px 16px; margin-bottom: 4px; border-radius: 8px; cursor: pointer; color: var(--text-sec); font-weight: 500; font-size: 0.95rem; transition: all 0.2s; }
-        .nav-item:hover { background: #f3f4f6; color: var(--text-main); } .nav-item.active { background: #eef2ff; color: var(--primary); font-weight: 600; }
+        
+        .nav-item { padding: 12px 16px; margin-bottom: 4px; border-radius: 8px; cursor: pointer; color: var(--text-sec); font-weight: 500; display: flex; align-items: center; gap: 10px; }
+        .nav-item:hover { background: #f3f4f6; color: var(--text-main); } 
+        .nav-item.active { background: #eef2ff; color: var(--primary); font-weight: 600; }
+        
         table { width: 100%; border-collapse: separate; border-spacing: 0; }
-        th { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--text-sec); font-size: 0.8rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+        th { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--text-sec); font-size: 0.8rem; text-transform: uppercase; font-weight: 600; }
         td { padding: 16px; border-bottom: 1px solid var(--border); color: var(--text-main); font-size: 0.95rem; }
-        tr:last-child td { border-bottom: none; }
+        
         .hidden { display: none !important; }
-        .toast { position: fixed; bottom: 30px; right: 30px; background: #1f2937; color: white; padding: 14px 24px; border-radius: 8px; opacity: 0; transition: 0.3s; z-index: 100; pointer-events: none; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); font-weight: 500; transform: translateY(10px); }
+        .toast { position: fixed; bottom: 30px; right: 30px; background: #1f2937; color: white; padding: 14px 24px; border-radius: 8px; opacity: 0; transition: 0.3s; z-index: 1000; pointer-events: none; }
         .toast.show { opacity: 1; transform: translateY(0); }
-        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+
+        /* Spinner for buttons */
+        .spinner {
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 0.8s linear infinite;
+        }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .btn-loading { pointer-events: none; opacity: 0.8; }
+        
+        /* Skeleton Loading for Table Rows */
+        .skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+            height: 20px; border-radius: 4px; width: 100%;
+        }
+        @keyframes loading { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+        /* Auth */
+        #auth-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; position: absolute; top: 0; left: 0; z-index: 999; background-color: #f9fafb; background-image: radial-gradient(#e5e7eb 1px, transparent 1px); background-size: 24px 24px; }
+        .auth-card { background: var(--surface); padding: 48px; border-radius: 16px; width: 100%; max-width: 380px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid var(--border); text-align: center; }
+
+        /* Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: center; justify-content: center; }
+        .modal-content { background: white; width: 600px; max-height: 80vh; border-radius: 12px; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; }
     </style>
 </head>
 <body>
 
 <div id="toast" class="toast">Notification</div>
 
+<!-- AUTH -->
 <div id="auth-container">
     <div id="form-login" class="auth-card">
-        <img src="/static/logo.png" alt="Logo">
-        
+        <img src="/static/logo.png" alt="Logo" style="width:100px; margin-bottom:20px;">
+        <h2 style="margin: 0 0 24px 0; color: var(--text-main);">Faculty Login</h2>
         <input type="text" id="login-user" placeholder="Username" />
         <input type="password" id="login-pass" placeholder="Password" />
-        
         <button id="btn-login" onclick="handleLogin()">Log In</button>
-        </div>
+    </div>
 </div>
 
+<!-- APP -->
 <div id="app-container" class="hidden">
     <aside>
-        <div class="logo-container">
-            <img src="/static/logo.png" alt="Upasthiti">
+        <div style="margin-bottom: 32px; padding-bottom: 20px; border-bottom: 1px solid var(--border); text-align: center;">
+            <img src="/static/logo.png" alt="Upasthiti" style="width: 120px;">
         </div>
         
-        <div class="nav-item active" onclick="nav('dashboard')" id="nav-dashboard">Dashboard</div>
-        <div class="nav-item" onclick="nav('courses')" id="nav-courses">Manage Courses</div>
-        <div class="nav-item" onclick="nav('attendance')" id="nav-attendance">Live Attendance</div>
-        <div class="nav-item" onclick="nav('students')" id="nav-students">Manage Students</div>
-        <div style="flex:1"></div>
-        <div class="nav-item" onclick="logout()" style="color: var(--danger);">Logout</div>
+        <div class="nav-item active" onclick="nav('dashboard')" id="nav-dashboard"><i class="ph ph-squares-four"></i> Dashboard</div>
+        <div class="nav-item" onclick="nav('courses')" id="nav-courses"><i class="ph ph-books"></i> Courses & Branches</div>
+        <div class="nav-item" onclick="nav('attendance')" id="nav-attendance"><i class="ph ph-scan"></i> Live Attendance</div>
+        <div class="nav-item" onclick="nav('students')" id="nav-students"><i class="ph ph-users"></i> Manage Students</div>
+        <div class="nav-item" onclick="nav('hierarchy')" id="nav-hierarchy"><i class="ph ph-tree-structure"></i> Hierarchy View</div>
+        
+        <!-- User Profile (Bottom Left) -->
+        <div class="user-profile">
+            <div class="user-info">
+                <span style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary);">Welcome,</span>
+                <strong id="display-username">...</strong>
+                <span id="display-institute" style="margin-top: 2px;"></span>
+            </div>
+            <div class="user-actions">
+                <button class="btn-outline" onclick="nav('settings')" title="Change Password"><i class="ph ph-gear"></i> Settings</button>
+                <button class="btn-danger" onclick="logout()" style="flex: 0 0 auto;" title="Logout"><i class="ph ph-sign-out"></i></button>
+            </div>
+        </div>
     </aside>
 
     <main>
+        
+        <!-- 1. DASHBOARD -->
         <div id="view-dashboard">
             <h2 style="margin-bottom: 24px;">Dashboard</h2>
             <div class="row" style="gap: 24px;">
                 <div class="card" style="flex: 1;">
                     <h3 style="color: var(--text-sec); font-weight: 500; margin-bottom: 10px;">Total Students</h3>
-                    <h1 id="stat-students" style="margin: 0; font-size: 3rem; color: var(--primary);">0</h1>
+                    <h1 id="stat-students" style="margin: 0; font-size: 3rem; color: var(--primary);">-</h1>
                 </div>
                 <div class="card" style="flex: 1;">
-                    <h3 style="color: var(--text-sec); font-weight: 500; margin-bottom: 10px;">Total Courses</h3>
-                    <h1 id="stat-courses" style="margin: 0; font-size: 3rem; color: var(--primary);">0</h1>
+                    <h3 style="color: var(--text-sec); font-weight: 500; margin-bottom: 10px;">Active Courses</h3>
+                    <h1 id="stat-courses" style="margin: 0; font-size: 3rem; color: var(--primary);">-</h1>
                 </div>
             </div>
-        </div>
-
-        <div id="view-courses" class="hidden">
-            <h2 style="margin-bottom: 24px;">Course Management</h2>
             <div class="card">
-                <h3>Create New Course</h3>
+                <h3>Quick Actions</h3>
                 <div class="row">
-                    <input type="text" id="new-course-name" placeholder="Course Name (e.g. CS101)" />
-                    <button class="btn-sm" onclick="createCourse()" id="btn-create-course">Add Course</button>
+                    <button onclick="nav('attendance')" style="margin: 0;">Start Live Class</button>
+                    <button class="btn-success" onclick="nav('students')" style="margin: 0;">Add Student</button>
                 </div>
-            </div>
-            <div class="card">
-                <h3>Your Courses</h3>
-                <table id="courses-table">
-                    <thead><tr><th>ID</th><th>Name</th><th style="text-align:right;">Action</th></tr></thead>
-                    <tbody></tbody>
-                </table>
             </div>
         </div>
 
+        <!-- 2. COURSES & BRANCHES -->
+        <div id="view-courses" class="hidden">
+            <h2 style="margin-bottom: 24px;">Manage Academics</h2>
+            <div class="card">
+                <h3>Add New Course</h3>
+                <div class="row" style="align-items: flex-start;">
+                    <div style="flex: 1;">
+                        <input type="text" id="new-course-name" placeholder="Course Name (e.g. B.Tech)" style="margin-top: 0;">
+                    </div>
+                    <button class="btn-sm" onclick="createCourse()" id="btn-create-course" style="height: 46px;">Add Course</button>
+                </div>
+            </div>
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h3 style="margin:0;">Your Courses</h3>
+                    <button class="btn-sm btn-outline" onclick="loadCoursesUI()" title="Reload"><i class="ph ph-arrows-clockwise"></i></button>
+                </div>
+                <table id="courses-table">
+                    <thead><tr><th>ID</th><th>Name</th><th style="text-align:right;">Actions</th></tr></thead>
+                    <tbody><!-- Populated via JS --></tbody>
+                </table>
+                <div id="courses-loading" style="text-align:center; padding:20px; display:none; color:var(--text-sec);">Loading courses...</div>
+            </div>
+        </div>
+
+        <!-- COURSE MANAGEMENT MODAL -->
+        <div id="manage-modal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h2 id="modal-title" style="margin:0">Manage Course</h2>
+                    <button class="btn-sm btn-outline" onclick="closeModal()">Close</button>
+                </div>
+                
+                <!-- Add Student Section -->
+                <div style="background:#f9fafb; padding:15px; border-radius:8px; margin-bottom:20px;">
+                    <h4 style="margin:0 0 10px 0;">Add Students</h4>
+                    <div class="row" style="gap:10px;">
+                        <input type="text" id="enroll-roll" placeholder="Roll No" style="margin:0;">
+                        <button class="btn-sm" id="btn-enroll-single" onclick="enrollStudent()">Add Student</button>
+                    </div>
+                    <div style="text-align:center; margin:10px 0; color:#999; font-size:0.8rem;">— OR —</div>
+                    <div class="row" style="gap:10px;">
+                        <input type="text" id="enroll-branch" placeholder="Branch Name (e.g. CSE)" style="margin:0;">
+                        <button class="btn-sm btn-outline" id="btn-enroll-branch" onclick="enrollBranch()">Add Entire Branch</button>
+                    </div>
+                </div>
+
+                <!-- Enrolled List -->
+                <h4>Enrolled Students</h4>
+                <div style="flex:1; overflow-y:auto; border:1px solid #eee; border-radius:8px; max-height: 300px;">
+                    <table id="enrolled-table" style="width:100%;">
+                        <thead style="background:#f9fafb;"><tr><th>Roll</th><th>Name</th><th>Action</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                    <div id="modal-loading" style="text-align:center; padding:20px; color:var(--text-sec); display:none;">Fetching list...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. LIVE ATTENDANCE -->
         <div id="view-attendance" class="hidden">
             <h2 style="margin-bottom: 24px;">Live Attendance</h2>
             
+            <!-- Setup Session -->
             <div id="att-setup" class="card">
                 <h3>Start New Session</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                     <div>
-                        <label style="font-size: 0.9rem; color: var(--text-sec); margin-bottom: 6px; display: block;">Select Course</label>
+                        <label style="font-size: 0.9rem; color: var(--text-sec);">Select Course</label>
                         <select id="att-course-select" style="margin:0;"></select>
                     </div>
                     <div>
-                        <label style="font-size: 0.9rem; color: var(--text-sec); margin-bottom: 6px; display: block;">Batch / Section</label>
+                        <label style="font-size: 0.9rem; color: var(--text-sec);">Batch Name</label>
                         <input type="text" id="att-batch" placeholder="e.g. Lecture 1" style="margin:0;" />
                     </div>
                 </div>
-                <button onclick="startClass()" id="btn-start-class" style="margin-top: 24px;">Start Live Class</button>
+                <button onclick="startClass()" id="btn-start-class" style="margin-top: 24px;">Start Live QR Session</button>
             </div>
 
+            <!-- Active Session -->
             <div id="att-active" class="card hidden">
                 <div class="row" style="justify-content: space-between; align-items: center;">
                     <div>
@@ -137,70 +243,119 @@
                         <span id="live-count" style="font-size: 1.5rem; line-height: 1.2;">0</span>
                     </div>
 
-                    <button class="btn-danger btn-sm" onclick="endClass()">End Class</button>
+                    <button class="btn-danger btn-sm" id="btn-end-class" onclick="endClass()">End Class</button>
                 </div>
-                <div style="text-align: center; margin-top: 30px; padding: 20px; background: #f9fafb; border-radius: 12px; border: 1px dashed #cbd5e1; display: inline-block;">
-                    <div id="qrcode"></div>
-                    <p style="color: var(--text-sec); font-size: 0.85rem; margin-top: 15px;">QR Code refreshes every 5 seconds</p>
+                <div style="text-align: center; margin-top: 30px; padding: 20px; background: #fff; border-radius: 12px; border: 1px dashed #cbd5e1; display: inline-block; width: 100%;">
+                    <div id="qrcode" style="display: flex; justify-content: center;"></div>
+                    <p style="color: var(--text-sec); font-size: 0.85rem; margin-top: 15px; font-weight: 500;">
+                        <span class="spinner" style="border-color: #6b7280; border-top-color: transparent;"></span>
+                        QR refreshes every 5 seconds for security
+                    </p>
                 </div>
             </div>
         </div>
 
+        <!-- 4. STUDENT MANAGEMENT -->
         <div id="view-students" class="hidden">
             <h2 style="margin-bottom: 24px;">Student Management</h2>
             
             <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+                <!-- Add Student Form -->
                 <div class="card" style="flex: 1; min-width: 300px;">
                     <h3>Register Student</h3>
-                    <div style="display: flex; flex-direction: column; gap: 12px;">
-                        <input type="text" id="s-roll" placeholder="Roll Number" style="margin:0;">
-                        <input type="text" id="s-name" placeholder="Full Name" style="margin:0;">
-                        <select id="s-course-select" style="margin:0;"></select>
-                        <input type="file" id="s-photo" accept="image/*" style="margin:0;">
+                    <p style="font-size:0.85rem; color:var(--text-sec); margin-top:-10px;">Adds student to database (not to a course)</p>
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <input type="text" id="s-roll" placeholder="Roll Number">
+                        <input type="text" id="s-name" placeholder="Full Name">
+                        <input type="text" id="s-branch" placeholder="Branch (Mandatory)">
+                        <input type="file" id="s-photo" accept="image/*" style="margin:0 0 10px 0;">
+
                         <button onclick="addStudent()" id="btn-add-student">Register Student</button>
                     </div>
                 </div>
 
+                <!-- Bulk Import -->
                 <div class="card" style="flex: 1; min-width: 300px;">
-                    <h3>Bulk Import</h3>
-                    <p style="font-size: 0.85rem; color: var(--text-sec); margin-top:0;">CSV Format: roll_no, name, image_link</p>
+                    <h3>Bulk Import (CSV)</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-sec); margin-top:0;">Format: roll_no, name, branch, image_link</p>
                     
-                    <select id="bulk-course-select" style="margin: 12px 0;"></select>
-                    <input type="file" id="bulk-file" accept=".csv,.xlsx" style="margin:0 0 12px 0;">
-                    
-                    <button class="btn-sm" style="background: #374151; width: 100%;" onclick="bulkUpload()" id="btn-bulk">Upload CSV</button>
+                    <input type="file" id="bulk-file" accept=".csv,.xlsx" style="margin:12px 0;">
+                    <button class="btn-sm" style="background: #374151; width: 100%;" onclick="bulkUpload()" id="btn-bulk-import">Process CSV</button>
                     <div id="bulk-log" style="margin-top:12px; font-size:0.85rem; white-space: pre-wrap; color: var(--text-sec);"></div>
                 </div>
             </div>
 
             <div class="card">
                 <div class="row" style="justify-content: space-between;">
-                    <h3 style="margin:0;">Student List</h3>
-                    <button class="btn-sm" style="background: white; color: var(--text-main); border: 1px solid var(--border);" onclick="loadStudents()">Refresh</button>
+                    <h3 style="margin:0;">Registered Students</h3>
+                    <button class="btn-sm btn-outline" onclick="loadStudentsUI()" title="Refresh"><i class="ph ph-arrows-clockwise"></i></button>
                 </div>
                 <table id="students-table" style="margin-top: 15px;">
-                    <thead><tr><th>Roll</th><th>Name</th><th style="text-align: right;">Action</th></tr></thead>
-                    <tbody></tbody>
+                    <thead><tr><th>Roll</th><th>Name</th><th>Branch</th><th style="text-align: right;">Action</th></tr></thead>
+                    <tbody><!-- JS Populated --></tbody>
                 </table>
+                <div id="students-loading" style="text-align:center; padding:20px; display:none; color:var(--text-sec);">Fetching students...</div>
             </div>
         </div>
+
+        <!-- 5. HIERARCHY VIEW -->
+        <div id="view-hierarchy" class="hidden">
+            <h2 style="margin-bottom: 24px;">Hierarchy Explorer</h2>
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                    <p style="margin:0">Click items to expand: Course → Branch → Students</p>
+                    <button class="btn-sm btn-outline" onclick="loadHierarchyUI()"><i class="ph ph-arrows-clockwise"></i></button>
+                </div>
+                <div id="hierarchy-container">
+                    <!-- Tree generated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. SETTINGS VIEW -->
+        <div id="view-settings" class="hidden">
+            <h2 style="margin-bottom: 24px;">Account Settings</h2>
+            <div class="card" style="max-width: 500px;">
+                <h3>Change Password</h3>
+                <div style="display: flex; flex-direction: column;">
+                    <label style="font-size:0.85rem; font-weight:600; margin-bottom:5px;">Current Password</label>
+                    <input type="password" id="pwd-old" placeholder="Enter current password">
+                    
+                    <label style="font-size:0.85rem; font-weight:600; margin-bottom:5px;">New Password</label>
+                    <input type="password" id="pwd-new" placeholder="Enter new password">
+                    
+                    <label style="font-size:0.85rem; font-weight:600; margin-bottom:5px;">Confirm New Password</label>
+                    <input type="password" id="pwd-confirm" placeholder="Confirm new password">
+                    
+                    <button onclick="changePassword()" id="btn-change-pwd" style="margin-top:10px;">Update Password</button>
+                </div>
+            </div>
+        </div>
+
     </main>
 </div>
 
 <script>
     let token = localStorage.getItem('token');
     let qrTimer = null;
+    let activeCourseId = null;
 
     if(token) showApp();
 
-    async function apiCall(url, method="GET", body=null, btnId=null) {
+    // --- API HELPER WITH UI LOADING STATES ---
+    async function apiCall(url, method="GET", body=null, btnId=null, loadingElId=null) {
         const btn = btnId ? document.getElementById(btnId) : null;
+        const loader = loadingElId ? document.getElementById(loadingElId) : null;
         let originalText = "";
         
+        // UI: Start Loading
         if(btn) {
-            originalText = btn.innerText;
-            btn.innerHTML = `<span class="spinner"></span> Processing...`;
-            btn.classList.add('btn-loading');
+            originalText = btn.innerHTML;
+            btn.innerHTML = `<div class="spinner"></div> Processing`;
+            btn.disabled = true;
+        }
+        if(loader) {
+            loader.style.display = 'block';
         }
 
         const headers = { 'Authorization': `Bearer ${token}` };
@@ -220,9 +375,13 @@
             showToast(e.message, 'error');
             return null;
         } finally {
+            // UI: Stop Loading
             if(btn) {
                 btn.innerHTML = originalText;
-                btn.classList.remove('btn-loading');
+                btn.disabled = false;
+            }
+            if(loader) {
+                loader.style.display = 'none';
             }
         }
     }
@@ -235,22 +394,27 @@
         setTimeout(() => t.classList.remove('show'), 3000);
     }
 
-    // REMOVED TOGGLE AUTH FUNCTION (Not needed anymore)
-
     function nav(view) {
         document.querySelectorAll('main > div').forEach(d => d.classList.add('hidden'));
         document.querySelectorAll('.nav-item').forEach(d => d.classList.remove('active'));
-        document.getElementById('view-'+view).classList.remove('hidden');
-        document.getElementById('nav-'+view).classList.add('active');
+        
+        const viewEl = document.getElementById('view-'+view);
+        if(viewEl) viewEl.classList.remove('hidden');
+        
+        const navEl = document.getElementById('nav-'+view);
+        if(navEl) navEl.classList.add('active');
 
         if(view === 'dashboard') loadStats();
-        if(view === 'courses' || view === 'attendance' || view === 'students') loadCourses();
-        if(view === 'students') loadStudents();
+        if(view === 'courses') loadCoursesUI();
+        if(view === 'students') loadStudentsUI();
+        if(view === 'attendance') loadCoursesForAttendance(); 
+        if(view === 'hierarchy') loadHierarchyUI();
     }
 
     function showApp() {
         document.getElementById('auth-container').classList.add('hidden');
         document.getElementById('app-container').classList.remove('hidden');
+        loadProfile();
         nav('dashboard');
     }
 
@@ -261,8 +425,10 @@
         const p = document.getElementById('login-pass').value;
         const fd = new URLSearchParams(); fd.append('username', u); fd.append('password', p);
         
+        // Manual call here to handle auth UI specifically
         const btn = document.getElementById('btn-login');
-        btn.innerHTML = `<span class="spinner"></span> Verifying...`; 
+        const orig = btn.innerText;
+        btn.innerText = "Verifying..."; btn.disabled = true;
         
         try {
             const res = await fetch('/token', { method:'POST', body:fd, headers:{'Content-Type':'application/x-www-form-urlencoded'} });
@@ -275,10 +441,227 @@
                 showToast("Invalid Credentials", "error");
             }
         } catch(e) { showToast("Connection Error", "error"); }
-        finally { btn.innerText = "Log In"; }
+        finally { btn.innerText = orig; btn.disabled = false; }
     }
 
-    // REMOVED handleSignup() FUNCTION
+    // --- USER PROFILE & SETTINGS ---
+    async function loadProfile() {
+        const data = await apiCall('/api/me');
+        if (data) {
+            document.getElementById('display-username').innerText = data.username || "Instructor";
+            document.getElementById('display-institute').innerText = data.institute_name || "";
+        }
+    }
+
+    async function changePassword() {
+        const oldP = document.getElementById('pwd-old').value;
+        const newP = document.getElementById('pwd-new').value;
+        const confP = document.getElementById('pwd-confirm').value;
+
+        if(!oldP || !newP) return showToast("Fill all fields", "error");
+        if(newP !== confP) return showToast("New passwords do not match", "error");
+
+        const res = await apiCall('/api/change_password', 'POST', {
+            old_password: oldP,
+            new_password: newP
+        }, 'btn-change-pwd');
+
+        if(res && res.success) {
+            showToast("Password changed successfully");
+            document.getElementById('pwd-old').value = "";
+            document.getElementById('pwd-new').value = "";
+            document.getElementById('pwd-confirm').value = "";
+            nav('dashboard');
+        }
+    }
+
+    // --- CORE LOGIC (COURSE & BRANCH) ---
+    async function createCourse() {
+        const name = document.getElementById('new-course-name').value;
+        if(!name) return;
+        const res = await apiCall('/api/courses', 'POST', { name: name }, 'btn-create-course');
+        if(res) { 
+            document.getElementById('new-course-name').value = "";
+            loadCoursesUI(); 
+            showToast("Course Created");
+        }
+    }
+
+    async function loadCoursesUI() {
+        // Clear table first
+        document.querySelector('#courses-table tbody').innerHTML = "";
+        
+        const courses = await apiCall('/api/courses', 'GET', null, null, 'courses-loading');
+        if(!courses) return;
+        
+        const tbody = document.querySelector('#courses-table tbody');
+        courses.forEach(c => {
+            tbody.innerHTML += `
+                <tr>
+                    <td><code>${c.id}</code></td>
+                    <td><strong>${c.name}</strong></td>
+                    <td style="text-align:right">
+                        <button class="btn-sm btn-outline" onclick="openManageModal(${c.id}, '${c.name}')">Manage Students</button>
+                        <button class="btn-sm btn-success" onclick="downloadReport(${c.id})">Report</button>
+                        <button class="btn-danger btn-sm" onclick="deleteCourse(${c.id})">Delete</button>
+                    </td>
+                </tr>
+            `;
+        });
+        document.getElementById('stat-courses').innerText = courses.length;
+    }
+
+    async function deleteCourse(id) {
+        if(!confirm("Delete this course and all its data?")) return;
+        await apiCall(`/api/courses/${id}`, 'DELETE');
+        loadCoursesUI();
+    }
+
+    async function downloadReport(courseId) {
+        showToast("Generating report...", "normal");
+        const url = `/api/download_course_report/${courseId}`;
+        fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(res => { if(res.ok) return res.blob(); throw new Error("Download Failed"); })
+        .then(blob => {
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = `Attendance_Report.xlsx`;
+            link.click();
+            showToast("Download started");
+        })
+        .catch(err => showToast("Error downloading report", "error"));
+    }
+
+    // --- COURSE MANAGEMENT MODAL ---
+    async function openManageModal(id, name) {
+        activeCourseId = id;
+        document.getElementById('modal-title').innerText = `Manage: ${name}`;
+        document.getElementById('manage-modal').classList.remove('hidden');
+        loadEnrolledStudents(id);
+    }
+    
+    function closeModal() {
+        document.getElementById('manage-modal').classList.add('hidden');
+        activeCourseId = null;
+    }
+
+    async function loadEnrolledStudents(courseId) {
+        document.querySelector('#enrolled-table tbody').innerHTML = "";
+        const students = await apiCall(`/api/course_students/${courseId}`, 'GET', null, null, 'modal-loading');
+        const tbody = document.querySelector('#enrolled-table tbody');
+        if(students) {
+            if(students.length === 0) tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#999;">No students enrolled</td></tr>`;
+            else {
+                students.forEach(s => {
+                    tbody.innerHTML += `<tr><td>${s.roll_number}</td><td>${s.name}</td><td><button class="btn-danger btn-sm" onclick="dropStudent('${s.roll_number}')">Drop</button></td></tr>`;
+                });
+            }
+        }
+    }
+
+    async function enrollStudent() {
+        const roll = document.getElementById('enroll-roll').value;
+        if(!roll) return showToast("Enter Roll No", "error");
+        const res = await apiCall('/api/enroll_student', 'POST', { course_id: activeCourseId, roll_number: roll }, 'btn-enroll-single');
+        if(res && res.success) {
+            showToast(res.message);
+            loadEnrolledStudents(activeCourseId);
+            document.getElementById('enroll-roll').value = "";
+        }
+    }
+
+    async function enrollBranch() {
+        const branch = document.getElementById('enroll-branch').value;
+        if(!branch) return showToast("Enter Branch", "error");
+        const res = await apiCall('/api/enroll_branch', 'POST', { course_id: activeCourseId, branch: branch }, 'btn-enroll-branch');
+        if(res && res.success) {
+            showToast(res.message);
+            loadEnrolledStudents(activeCourseId);
+            document.getElementById('enroll-branch').value = "";
+        }
+    }
+
+    async function dropStudent(roll) {
+        if(!confirm("Remove student from course?")) return;
+        const res = await apiCall('/api/drop_student', 'POST', { course_id: activeCourseId, roll_number: roll });
+        if(res && res.success) {
+            loadEnrolledStudents(activeCourseId);
+        }
+    }
+
+    // --- STUDENT MANAGEMENT ---
+    async function addStudent() {
+        const roll = document.getElementById('s-roll').value;
+        const name = document.getElementById('s-name').value;
+        const branch = document.getElementById('s-branch').value;
+        const file = document.getElementById('s-photo').files[0];
+
+        if(!branch || !file) return showToast("Branch and Photo Required", "error");
+
+        const btn = document.getElementById('btn-add-student');
+        btn.innerHTML = `<div class="spinner"></div> Reading File...`;
+        btn.disabled = true;
+
+        const reader = new FileReader();
+        reader.onload = async function() {
+            // Restore button state handled by apiCall
+            const res = await apiCall('/api/register', 'POST', {
+                rollNumber: roll, name: name, branch: branch, photoBase64: reader.result
+            }, 'btn-add-student');
+            
+            if(res) { 
+                showToast("Student Registered"); 
+                document.getElementById('s-roll').value="";
+                document.getElementById('s-name').value="";
+                loadStudentsUI();
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    async function bulkUpload() {
+        const file = document.getElementById('bulk-file').files[0];
+        if(!file) return showToast("Select CSV", "error");
+        
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await apiCall('/api/bulk_register', 'POST', fd, 'btn-bulk-import'); 
+        if(res) {
+            let msg = `Added: ${res.added}.`;
+            if(res.errors.length > 0) msg += ` Errors: ${res.errors.length}`;
+            showToast(msg);
+            loadStudentsUI();
+        }
+    }
+
+    async function loadStudentsUI() {
+        document.querySelector('#students-table tbody').innerHTML = "";
+        const students = await apiCall('/api/students', 'GET', null, null, 'students-loading');
+        
+        const tbody = document.querySelector('#students-table tbody');
+        if(students) {
+            if(students.length === 0) tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px;">No students found</td></tr>`;
+            else {
+                students.forEach(s => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><code>${s.roll_number}</code></td>
+                            <td>${s.name}</td>
+                            <td>${s.branch}</td>
+                            <td style="text-align:right"><button class="btn-danger btn-sm" onclick="removeStudent(${s.id})">Remove</button></td>
+                        </tr>
+                    `;
+                });
+            }
+            document.getElementById('stat-students').innerText = students.length;
+        }
+    }
+
+    async function removeStudent(id) {
+        if(!confirm("Delete student?")) return;
+        await apiCall(`/api/students/${id}`, 'DELETE');
+        loadStudentsUI();
+    }
 
     async function loadStats() {
         const data = await apiCall('/api/dashboard_stats');
@@ -288,134 +671,14 @@
         }
     }
 
-    async function loadCourses() {
+    // --- LIVE ATTENDANCE ---
+    async function loadCoursesForAttendance() {
         const courses = await apiCall('/api/courses');
-        if(!courses) return;
-        
-        const tbody = document.querySelector('#courses-table tbody');
-        if(tbody) tbody.innerHTML = "";
-        
-        const attSelect = document.getElementById('att-course-select');
-        const stuSelect = document.getElementById('s-course-select');
-        const bulkSelect = document.getElementById('bulk-course-select');
-        [attSelect, stuSelect, bulkSelect].forEach(s => s.innerHTML = "");
-
-        courses.forEach(c => {
-            if(tbody) {
-                tbody.innerHTML += `
-                    <tr>
-                        <td><span style="background: #eef2ff; color: var(--primary); padding: 4px 8px; border-radius: 6px; font-weight: 600; font-size: 0.85rem;">${c.id}</span></td>
-                        <td style="font-weight: 500;">${c.name}</td>
-                        <td style="text-align: right;">
-                            <button class="btn-sm btn-success" style="margin-right: 8px;" onclick="downloadReport(${c.id})">
-                                ⬇ Report
-                            </button>
-                            <button class="btn-danger btn-sm" onclick="deleteCourse(${c.id})">Delete</button>
-                        </td>
-                    </tr>`;
-            }
-            [attSelect, stuSelect, bulkSelect].forEach(s => {
-                s.innerHTML += `<option value="${c.id}">${c.name}</option>`;
-            });
-        });
-    }
-
-    function downloadReport(courseId) {
-        const url = `/api/download_course_report/${courseId}`;
-        fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
-        .then(res => {
-            if(res.ok) return res.blob();
-            throw new Error("Download Failed");
-        })
-        .then(blob => {
-            const link = document.createElement('a');
-            link.href = window.URL.createObjectURL(blob);
-            link.download = `Attendance_Report.xlsx`;
-            link.click();
-        })
-        .catch(err => showToast("Error downloading report", "error"));
-    }
-
-    async function createCourse() {
-        const name = document.getElementById('new-course-name').value;
-        if(!name) return;
-        const res = await apiCall('/api/courses', 'POST', { name: name }, 'btn-create-course');
-        if(res) { 
-            document.getElementById('new-course-name').value = "";
-            loadCourses(); 
-            showToast("Course Created");
+        const attSel = document.getElementById('att-course-select');
+        if(attSel && courses) {
+            attSel.innerHTML = "";
+            courses.forEach(c => attSel.innerHTML += `<option value="${c.id}">${c.name}</option>`);
         }
-    }
-
-    async function deleteCourse(id) {
-        if(!confirm("Are you sure? This deletes all related sessions.")) return;
-        await apiCall(`/api/courses/${id}`, 'DELETE');
-        loadCourses();
-    }
-
-    async function loadStudents() {
-        const students = await apiCall('/api/students');
-        const tbody = document.querySelector('#students-table tbody');
-        tbody.innerHTML = "";
-        if(students) {
-            students.forEach(s => {
-                tbody.innerHTML += `
-                <tr>
-                    <td><span style="font-family: monospace; background: #f3f4f6; padding: 4px 6px; border-radius: 4px;">${s.roll_number}</span></td>
-                    <td style="font-weight: 500;">${s.name}</td>
-                    <td style="text-align: right;"><button class="btn-danger btn-sm" onclick="deleteStudent(${s.id})">Delete</button></td>
-                </tr>`;
-            });
-        }
-    }
-
-    async function addStudent() {
-        const roll = document.getElementById('s-roll').value;
-        const name = document.getElementById('s-name').value;
-        const courseId = document.getElementById('s-course-select').value;
-        const file = document.getElementById('s-photo').files[0];
-
-        if(!courseId) return showToast("Create a course first", "error");
-        if(!file) return showToast("Select photo", "error");
-
-        const reader = new FileReader();
-        reader.onload = async function() {
-            const res = await apiCall('/api/register', 'POST', {
-                rollNumber: roll, name: name, photoBase64: reader.result, course_id: parseInt(courseId)
-            }, 'btn-add-student');
-            if(res) { 
-                showToast("Student Added!"); 
-                document.getElementById('s-roll').value="";
-                loadStudents();
-            }
-        };
-        reader.readAsDataURL(file);
-    }
-
-    async function bulkUpload() {
-        const courseId = document.getElementById('bulk-course-select').value;
-        const file = document.getElementById('bulk-file').files[0];
-        
-        if(!courseId) return showToast("Select a course", "error");
-        if(!file) return showToast("Select CSV/Excel", "error");
-
-        const fd = new FormData();
-        fd.append('file', file);
-
-        const res = await apiCall(`/api/bulk_register?course_id=${courseId}`, 'POST', fd, 'btn-bulk');
-        if(res) {
-            let msg = `Added: ${res.added}.`;
-            if(res.errors && res.errors.length > 0) msg += ` (Errors: ${res.errors.length})`;
-            showToast(msg, res.errors.length > 0 ? 'error' : 'normal');
-            document.getElementById('bulk-log').innerText = res.errors.join("\n");
-            loadStudents();
-        }
-    }
-
-    async function deleteStudent(id) {
-        if(!confirm("Delete this student?")) return;
-        await apiCall(`/api/students/${id}`, 'DELETE');
-        loadStudents();
     }
 
     async function startClass() {
@@ -424,42 +687,139 @@
         
         const courseId = parseInt(select.value); 
         const courseName = select.options[select.selectedIndex].text;
-        const b = document.getElementById('att-batch').value;
+        const batch = document.getElementById('att-batch').value;
         
         const res = await apiCall('/api/start_class', 'POST', {
             course_id: courseId,
             course_name: courseName, 
-            batch_name: b, 
+            batch_name: batch, 
             date_str: new Date().toISOString()
         }, 'btn-start-class');
 
         if(res) {
             document.getElementById('att-setup').classList.add('hidden');
             document.getElementById('att-active').classList.remove('hidden');
-            document.getElementById('active-session-title').innerText = `${courseName} - ${b}`;
+            document.getElementById('active-session-title').innerText = `${courseName} - ${batch}`;
             updateQR();
             qrTimer = setInterval(updateQR, 5000);
         }
     }
 
     async function updateQR() {
-        const data = await apiCall('/api/get_qr');
-        if(data) {
-            document.getElementById("qrcode").innerHTML = "";
-            new QRCode(document.getElementById("qrcode"), { text: data.qrToken, width: 350, height: 350 });
-            
-            // UPDATE HEADCOUNT BADGE
-            const count = data.student_count !== undefined ? data.student_count : 0;
-            document.getElementById("live-count").innerText = count;
-        }
+        // Silent update (no spinner)
+        const headers = { 'Authorization': `Bearer ${token}` };
+        try {
+            const res = await fetch('/api/get_qr', { headers });
+            if(res.ok) {
+                const data = await res.json();
+                document.getElementById("qrcode").innerHTML = "";
+                new QRCode(document.getElementById("qrcode"), { text: data.qrToken, width: 250, height: 250 });
+                document.getElementById("live-count").innerText = data.student_count || 0;
+            }
+        } catch(e) { console.log("QR Update skipped"); }
     }
 
     async function endClass() {
         clearInterval(qrTimer);
-        await apiCall('/api/end_class', 'POST');
+        await apiCall('/api/end_class', 'POST', null, 'btn-end-class');
         document.getElementById('att-active').classList.add('hidden');
         document.getElementById('att-setup').classList.remove('hidden');
+        showToast("Class Ended");
     }
+
+    // --- HIERARCHY VIEW ---
+    async function loadHierarchyUI() {
+        const container = document.getElementById('hierarchy-container');
+        container.innerHTML = `<div style="text-align:center; padding:20px;"><div class="spinner" style="display:inline-block; border-color:#666; border-top-color:transparent;"></div> Building Tree...</div>`;
+
+        const courses = await apiCall('/api/courses');
+        
+        if(!courses || courses.length === 0) { 
+            container.innerHTML = `<div style="text-align:center; padding:20px; color:#999">No data found.</div>`; 
+            return; 
+        }
+        
+        container.innerHTML = "";
+
+        for (const c of courses) {
+            const courseDiv = document.createElement('div');
+            courseDiv.className = 'tree-node';
+            
+            const header = document.createElement('div');
+            header.className = 'tree-header';
+            header.innerHTML = `<span>📘 ${c.name}</span> <span>⬇</span>`;
+            
+            const children = document.createElement('div');
+            children.className = 'tree-children';
+            children.innerHTML = `<div style="padding:10px; color:#999; font-size:0.85rem;">Loading students...</div>`;
+
+            // Toggle logic
+            header.onclick = async=> {
+                const isHidden = children.style.display === 'none' || children.style.display === '';
+                if(isHidden) {
+                    children.style.display = 'block';
+                    header.querySelector('span:last-child').innerText = '⬆';
+                    
+                    // Lazy load if not already loaded
+                    if(children.innerHTML.includes('Loading')) {
+                        const enrolled = await apiCall(`/api/course_students/${c.id}`);
+                      children.innerHTML = ""; // Clear loader
+                        
+                        if (!enrolled || enrolled.length === 0) {
+                             children.innerHTML = `<div style="padding:10px; color:#999">No students enrolled.</div>`;
+                        } else {
+                            // Group by branch
+                            const branches = {};
+                            enrolled.forEach(s => {
+                                const b = s.branch || 'Unassigned';
+                                if(!branches[b]) branches[b] = [];
+                                branches[b].push(s);
+                            });
+
+                            Object.keys(branches).forEach(bName => {
+                                const branchDiv = document.createElement('div');
+                                branchDiv.style.marginLeft = "15px";
+                                branchDiv.style.marginTop = "5px";
+                                branchDiv.style.borderLeft = "2px solid #e5e7eb";
+                                
+                                const bHeader = document.createElement('div');
+                                bHeader.style.padding = "5px 10px";
+                                bHeader.style.cursor = "pointer";
+                                bHeader.style.fontWeight = "500";
+                                bHeader.innerHTML = `📂 ${bName} (${branches[bName].length})`;
+                                
+                                const bStudents = document.creatlement('div');
+                                bStudents.style.display = "none";
+                                bStudents.style.paddingLeft = "10px";
+
+                                bHeader.onclick = (e) => {
+                                    e.stopPropagation();
+                                    const isVis = bStudents.style.display === 'block';
+                                    bStudents.style.display = isVis ? 'none' : 'block';
+                                };
+
+                                branches[bName].forEach(s => {
+                                    bStudents.innerHTML += `<div class="student-item" style="background:#fff;"><span>🎓 ${s.name}</span> <small>${s.roll_number}</small></div>`;
+                                });
+
+                                branchDiv.appendChild(bHeader);
+                                branchDiv.appendChild(bStudents);
+                                children.appendChild(branchDiv);
+                            });
+                        }
+                  }
+                } else {
+                    children.style.display = 'none';
+                    header.querySelector('span:last-child').innerText = '⬇';
+                }
+            };
+
+            courseDiv.appendChild(header);
+            courseDiv.appendChild(children);
+            container.appendChild(courseDiv);
+        }
+    }
+
 </script>
 </body>
 </html>
