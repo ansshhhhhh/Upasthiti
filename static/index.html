@@ -18,8 +18,12 @@
         .logo-container { text-align: center; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
         .logo-container img { width: 120px; height: auto; }
         
-        /* User Profile Badge */
-        .user-profile { margin-top: auto; padding-top: 20px; border-top: 1px solid var(--border); }
+        /* User Profile Badge (Bottom Left) */
+        .user-profile { 
+            margin-top: auto; 
+            padding-top: 20px; 
+            border-top: 1px solid var(--border); 
+        }
         .user-info { margin-bottom: 12px; }
         .user-info strong { display: block; color: var(--text-main); font-size: 0.95rem; }
         .user-info span { display: block; color: var(--text-sec); font-size: 0.85rem; }
@@ -66,15 +70,6 @@
             animation: spin 0.8s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        
-        /* Skeleton Loading for Table Rows */
-        .skeleton {
-            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-            background-size: 200% 100%;
-            animation: loading 1.5s infinite;
-            height: 20px; border-radius: 4px; width: 100%;
-        }
-        @keyframes loading { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
         /* Auth */
         #auth-container { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; position: absolute; top: 0; left: 0; z-index: 999; background-color: #f9fafb; background-image: radial-gradient(#e5e7eb 1px, transparent 1px); background-size: 24px 24px; }
@@ -747,26 +742,26 @@
             
             const header = document.createElement('div');
             header.className = 'tree-header';
-            header.innerHTML = `<span>📘 ${c.name}</span> <span>⬇</span>`;
+            header.innerHTML = `<span>📘 ${c.name}</span<span>⬇</span>`;
             
             const children = document.createElement('div');
             children.className = 'tree-children';
             children.innerHTML = `<div style="padding:10px; color:#999; font-size:0.85rem;">Loading students...</div>`;
 
             // Toggle logic
-            header.onclick = async=> {
+            header.onclick = async () => {
                 const isHidden = children.style.display === 'none' || children.style.display === '';
                 if(isHidden) {
-                    children.style.display = 'block';
+                    children.style.display = 'ock';
                     header.querySelector('span:last-child').innerText = '⬆';
                     
                     // Lazy load if not already loaded
                     if(children.innerHTML.includes('Loading')) {
                         const enrolled = await apiCall(`/api/course_students/${c.id}`);
-                      children.innerHTML = ""; // Clear loader
+                        children.innerHTML = ""; // Clear loader
                         
                         if (!enrolled || enrolled.length === 0) {
-                             children.innerHTML = `<div style="padding:10px; color:#999">No students enrolled.</div>`;
+                             children.inneTML = `<div style="padding:10px; color:#999">No students enrolled.</div>`;
                         } else {
                             // Group by branch
                             const branches = {};
@@ -788,18 +783,18 @@
                                 bHeader.style.fontWeight = "500";
                                 bHeader.innerHTML = `📂 ${bName} (${branches[bName].length})`;
                                 
-                                const bStudents = document.creatlement('div');
+                                const bStudents = document.createElement('div');
                                 bStudents.style.display = "none";
                                 bStudents.style.paddingLeft = "10px";
 
-                                bHeader.onclick = (e) => {
+                               Header.onclick = (e) => {
                                     e.stopPropagation();
                                     const isVis = bStudents.style.display === 'block';
                                     bStudents.style.display = isVis ? 'none' : 'block';
                                 };
 
                                 branches[bName].forEach(s => {
-                                    bStudents.innerHTML += `<div class="student-item" style="background:#fff;"><span>🎓 ${s.name}</span> <small>${s.roll_number}</small></div>`;
+                                    bStudents.innerHTML += `<div class="student-item" style="background:#fff;"><span>🎓 ${s.name}</span> <small>${s.roll_mber}</small></div>`;
                                 });
 
                                 branchDiv.appendChild(bHeader);
@@ -807,12 +802,12 @@
                                 children.appendChild(branchDiv);
                             });
                         }
-                  }
+                    }
                 } else {
                     children.style.display = 'none';
                     header.querySelector('span:last-child').innerText = '⬇';
                 }
-            };
+          };
 
             courseDiv.appendChild(header);
             courseDiv.appendChild(children);
