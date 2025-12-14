@@ -78,13 +78,43 @@
         /* Modal */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: center; justify-content: center; }
         .modal-content { background: white; width: 600px; max-height: 80vh; border-radius: 12px; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; }
+
+        /* Hierarchy View Styling */
+        .tree-node {
+            margin-bottom: 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface);
+        }
+        .tree-header {
+            padding: 12px 16px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f9fafb;
+            border-radius: 8px 8px 0 0;
+            color: var(--primary);
+        }
+        .tree-children {
+            padding: 10px 0;
+            display: none;
+        }
+        .student-item {
+            padding: 8px 16px;
+            margin: 4px 0;
+            border-bottom: 1px dashed #f3f4f6;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
 
 <div id="toast" class="toast">Notification</div>
 
-<!-- AUTH -->
 <div id="auth-container">
     <div id="form-login" class="auth-card">
         <img src="/static/logo.png" alt="Logo" style="width:100px; margin-bottom:20px;">
@@ -95,7 +125,6 @@
     </div>
 </div>
 
-<!-- APP -->
 <div id="app-container" class="hidden">
     <aside>
         <div style="margin-bottom: 32px; padding-bottom: 20px; border-bottom: 1px solid var(--border); text-align: center;">
@@ -108,7 +137,6 @@
         <div class="nav-item" onclick="nav('students')" id="nav-students"><i class="ph ph-users"></i> Manage Students</div>
         <div class="nav-item" onclick="nav('hierarchy')" id="nav-hierarchy"><i class="ph ph-tree-structure"></i> Hierarchy View</div>
         
-        <!-- User Profile (Bottom Left) -->
         <div class="user-profile">
             <div class="user-info">
                 <span style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary);">Welcome,</span>
@@ -117,14 +145,13 @@
             </div>
             <div class="user-actions">
                 <button class="btn-outline" onclick="nav('settings')" title="Change Password"><i class="ph ph-gear"></i> Settings</button>
-                <button class="btn-danger" onclick="logout()" style="flex: 0 0 auto;" title="Logout"><i class="ph ph-sign-out"></i></button>
+                <button class="btn-danger" onclick="logout()" title="Logout"><i class="ph ph-sign-out"></i></button>
             </div>
         </div>
     </aside>
 
     <main>
         
-        <!-- 1. DASHBOARD -->
         <div id="view-dashboard">
             <h2 style="margin-bottom: 24px;">Dashboard</h2>
             <div class="row" style="gap: 24px;">
@@ -146,7 +173,6 @@
             </div>
         </div>
 
-        <!-- 2. COURSES & BRANCHES -->
         <div id="view-courses" class="hidden">
             <h2 style="margin-bottom: 24px;">Manage Academics</h2>
             <div class="card">
@@ -165,13 +191,12 @@
                 </div>
                 <table id="courses-table">
                     <thead><tr><th>ID</th><th>Name</th><th style="text-align:right;">Actions</th></tr></thead>
-                    <tbody><!-- Populated via JS --></tbody>
+                    <tbody></tbody>
                 </table>
                 <div id="courses-loading" style="text-align:center; padding:20px; display:none; color:var(--text-sec);">Loading courses...</div>
             </div>
         </div>
 
-        <!-- COURSE MANAGEMENT MODAL -->
         <div id="manage-modal" class="modal-overlay hidden">
             <div class="modal-content">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -179,7 +204,6 @@
                     <button class="btn-sm btn-outline" onclick="closeModal()">Close</button>
                 </div>
                 
-                <!-- Add Student Section -->
                 <div style="background:#f9fafb; padding:15px; border-radius:8px; margin-bottom:20px;">
                     <h4 style="margin:0 0 10px 0;">Add Students</h4>
                     <div class="row" style="gap:10px;">
@@ -193,7 +217,6 @@
                     </div>
                 </div>
 
-                <!-- Enrolled List -->
                 <h4>Enrolled Students</h4>
                 <div style="flex:1; overflow-y:auto; border:1px solid #eee; border-radius:8px; max-height: 300px;">
                     <table id="enrolled-table" style="width:100%;">
@@ -205,11 +228,9 @@
             </div>
         </div>
 
-        <!-- 3. LIVE ATTENDANCE -->
         <div id="view-attendance" class="hidden">
             <h2 style="margin-bottom: 24px;">Live Attendance</h2>
             
-            <!-- Setup Session -->
             <div id="att-setup" class="card">
                 <h3>Start New Session</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
@@ -225,7 +246,6 @@
                 <button onclick="startClass()" id="btn-start-class" style="margin-top: 24px;">Start Live QR Session</button>
             </div>
 
-            <!-- Active Session -->
             <div id="att-active" class="card hidden">
                 <div class="row" style="justify-content: space-between; align-items: center;">
                     <div>
@@ -250,12 +270,10 @@
             </div>
         </div>
 
-        <!-- 4. STUDENT MANAGEMENT -->
         <div id="view-students" class="hidden">
             <h2 style="margin-bottom: 24px;">Student Management</h2>
             
             <div style="display: flex; gap: 24px; flex-wrap: wrap;">
-                <!-- Add Student Form -->
                 <div class="card" style="flex: 1; min-width: 300px;">
                     <h3>Register Student</h3>
                     <p style="font-size:0.85rem; color:var(--text-sec); margin-top:-10px;">Adds student to database (not to a course)</p>
@@ -269,7 +287,6 @@
                     </div>
                 </div>
 
-                <!-- Bulk Import -->
                 <div class="card" style="flex: 1; min-width: 300px;">
                     <h3>Bulk Import (CSV)</h3>
                     <p style="font-size: 0.85rem; color: var(--text-sec); margin-top:0;">Format: roll_no, name, branch, image_link</p>
@@ -287,13 +304,12 @@
                 </div>
                 <table id="students-table" style="margin-top: 15px;">
                     <thead><tr><th>Roll</th><th>Name</th><th>Branch</th><th style="text-align: right;">Action</th></tr></thead>
-                    <tbody><!-- JS Populated --></tbody>
+                    <tbody></tbody>
                 </table>
                 <div id="students-loading" style="text-align:center; padding:20px; display:none; color:var(--text-sec);">Fetching students...</div>
             </div>
         </div>
 
-        <!-- 5. HIERARCHY VIEW -->
         <div id="view-hierarchy" class="hidden">
             <h2 style="margin-bottom: 24px;">Hierarchy Explorer</h2>
             <div class="card">
@@ -302,12 +318,10 @@
                     <button class="btn-sm btn-outline" onclick="loadHierarchyUI()"><i class="ph ph-arrows-clockwise"></i></button>
                 </div>
                 <div id="hierarchy-container">
-                    <!-- Tree generated here -->
-                </div>
+                    </div>
             </div>
         </div>
 
-        <!-- 6. SETTINGS VIEW -->
         <div id="view-settings" class="hidden">
             <h2 style="margin-bottom: 24px;">Account Settings</h2>
             <div class="card" style="max-width: 500px;">
@@ -584,7 +598,7 @@
         }
     }
 
-    // --- STUDENT MANAGEMENT ---
+    // --- STUDENT MANAGEMENT (FIXED addStudent function) ---
     async function addStudent() {
         const roll = document.getElementById('s-roll').value;
         const name = document.getElementById('s-name').value;
@@ -594,20 +608,29 @@
         if(!branch || !file) return showToast("Branch and Photo Required", "error");
 
         const btn = document.getElementById('btn-add-student');
+        const originalText = btn.innerHTML; // Store the actual original text
+
+        // Manually handle the spinner for file reading phase
         btn.innerHTML = `<div class="spinner"></div> Reading File...`;
         btn.disabled = true;
 
         const reader = new FileReader();
         reader.onload = async function() {
-            // Restore button state handled by apiCall
+            // Pass null for btnId to prevent apiCall from managing the button state
             const res = await apiCall('/api/register', 'POST', {
                 rollNumber: roll, name: name, branch: branch, photoBase64: reader.result
-            }, 'btn-add-student');
+            }, null); 
+            
+            // Manually restore the button state regardless of apiCall result
+            btn.innerHTML = originalText;
+            btn.disabled = false;
             
             if(res) { 
                 showToast("Student Registered"); 
                 document.getElementById('s-roll').value="";
                 document.getElementById('s-name').value="";
+                document.getElementById('s-branch').value="";
+                document.getElementById('s-photo').value = ""; // Clear file input
                 loadStudentsUI();
             }
         };
@@ -742,26 +765,26 @@
             
             const header = document.createElement('div');
             header.className = 'tree-header';
-            header.innerHTML = `<span>📘 ${c.name}</span<span>⬇</span>`;
+            header.innerHTML = `<span>📘 ${c.name}</span><span>⬇</span>`;
             
             const children = document.createElement('div');
             children.className = 'tree-children';
             children.innerHTML = `<div style="padding:10px; color:#999; font-size:0.85rem;">Loading students...</div>`;
 
             // Toggle logic
-            header.onclick = async () => {
+            er.onclick = async () => {
                 const isHidden = children.style.display === 'none' || children.style.display === '';
                 if(isHidden) {
-                    children.style.display = 'ock';
+                    children.style.display = 'block';
                     header.querySelector('span:last-child').innerText = '⬆';
                     
                     // Lazy load if not already loaded
                     if(children.innerHTML.includes('Loading')) {
-                        const enrolled = await apiCall(`/api/course_students/${c.id}`);
+                        const enrolled = await apiCall(`/api/course_students/${id}`);
                         children.innerHTML = ""; // Clear loader
                         
                         if (!enrolled || enrolled.length === 0) {
-                             children.inneTML = `<div style="padding:10px; color:#999">No students enrolled.</div>`;
+                             children.innerHTML = `<div style="padding:10px; color:#999">No students enrolled.</div>`;
                         } else {
                             // Group by branch
                             const branches = {};
@@ -783,25 +806,25 @@
                                 bHeader.style.fontWeight = "500";
                                 bHeader.innerHTML = `📂 ${bName} (${branches[bName].length})`;
                                 
-                                const bStudents = document.createElement('div');
+                                const bStunts = document.createElement('div');
                                 bStudents.style.display = "none";
                                 bStudents.style.paddingLeft = "10px";
 
-                               Header.onclick = (e) => {
+                                bHeader.onclick = (e) => {
                                     e.stopPropagation();
                                     const isVis = bStudents.style.display === 'block';
                                     bStudents.style.display = isVis ? 'none' : 'block';
                                 };
 
                                 branches[bName].forEach(s => {
-                                    bStudents.innerHTML += `<div class="student-item" style="background:#fff;"><span>🎓 ${s.name}</span> <small>${s.roll_mber}</small></div>`;
+                                    bStudents.innerHTML += `<div class="student-item" style="background:#fff;"><span>🎓 ${s.name}</span> <small>${s.roll_number}</small></div>`;
                                 });
 
                                 branchDiv.appendChild(bHeader);
                                 branchDiv.appendChild(bStudents);
                                 children.appendChild(branchDiv);
                             });
-                        }
+                      }
                     }
                 } else {
                     children.style.display = 'none';

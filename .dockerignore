@@ -4,4 +4,5 @@ __pycache__/
 .env
 upasthiti.db
 data/
+copy_index.html
 *.pyc
