@@ -527,19 +527,45 @@
     }
 
     async function downloadReport(courseId) {
-        showToast("Generating report...", "normal");
-        const url = `/api/download_course_report/${courseId}`;
-        fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
-        .then(res => { if(res.ok) return res.blob(); throw new Error("Download Failed"); })
-        .then(blob => {
-            const link = document.createElement('a');
-            link.href = window.URL.createObjectURL(blob);
-            link.download = `Attendance_Report.xlsx`;
-            link.click();
-            showToast("Download started");
-        })
-        .catch(err => showToast("Error downloading report", "error"));
-    }
+       try {
+           if (!token) { showToast("No auth token", "error"); return; }
+           showToast("Generating report...", "normal");
+
+           const url = `/api/download_course_report/${courseId}`;
+           const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+
+           if (!res.ok) {
+               // Try to parse JSON (FastAPI HTTPException -> {"detail": "..."}), else fall back to text
+               const ct = res.headers.get("content-type") || "";
+               let msg;
+               if (ct.includes("application/json")) {
+                   const j = await res.json().catch(() => null);
+                   msg = j?.detail || j?.message || JSON.stringify(j) || `${res.status} ${res.statusText}`;
+               } else {
+                   msg = await res.text().catch(() => `${res.status} ${res.statusText}`);
+               }
+               console.error("Download failed:", res.status, msg);
+               showToast(msg || "Download failed", "error");
+               return;
+           }
+
+           const blob = await res.blob();
+           const urlObj = window.URL.createObjectURL(blob);
+           const link = document.createElement('a');
+           link.href = urlObj;
+           link.download = `Attendance_Report.xlsx`;
+           document.body.appendChild(link);
+           link.click();
+           link.remove();
+           setTimeout(() => window.URL.revokeObjectURL(urlObj), 1000);
+
+           showToast("Download started", "success");
+       } catch (err) {
+           console.error(err);
+           showToast(err?.message || "Error downloading report", "error");
+       }
+   }
+
 
     // --- COURSE MANAGEMENT MODAL ---
     async function openManageModal(id, name) {
