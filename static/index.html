@@ -79,37 +79,7 @@
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; display: flex; align-items: center; justify-content: center; }
         .modal-content { background: white; width: 600px; max-height: 80vh; border-radius: 12px; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; }
 
-        /* Hierarchy View Styling */
-        .tree-node {
-            margin-bottom: 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: var(--surface);
-        }
-        .tree-header {
-            padding: 12px 16px;
-            cursor: pointer;
-            font-weight: 600;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #f9fafb;
-            border-radius: 8px 8px 0 0;
-            color: var(--primary);
-        }
-        .tree-children {
-            padding: 10px 0;
-            display: none;
-        }
-        .student-item {
-            padding: 8px 16px;
-            margin: 4px 0;
-            border-bottom: 1px dashed #f3f4f6;
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.9rem;
-        }
-    </style>
+   </style>
 </head>
 <body>
 
@@ -135,8 +105,7 @@
         <div class="nav-item" onclick="nav('courses')" id="nav-courses"><i class="ph ph-books"></i> Courses & Branches</div>
         <div class="nav-item" onclick="nav('attendance')" id="nav-attendance"><i class="ph ph-scan"></i> Live Attendance</div>
         <div class="nav-item" onclick="nav('students')" id="nav-students"><i class="ph ph-users"></i> Manage Students</div>
-        <div class="nav-item" onclick="nav('hierarchy')" id="nav-hierarchy"><i class="ph ph-tree-structure"></i> Hierarchy View</div>
-        
+
         <div class="user-profile">
             <div class="user-info">
                 <span style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--primary);">Welcome,</span>
@@ -287,14 +256,45 @@
                     </div>
                 </div>
 
-                <div class="card" style="flex: 1; min-width: 300px;">
-                    <h3>Bulk Import (CSV)</h3>
-                    <p style="font-size: 0.85rem; color: var(--text-sec); margin-top:0;">Format: roll_no, name, branch, image_link</p>
-                    
-                    <input type="file" id="bulk-file" accept=".csv,.xlsx" style="margin:12px 0;">
-                    <button class="btn-sm" style="background: #374151; width: 100%;" onclick="bulkUpload()" id="btn-bulk-import">Process CSV</button>
-                    <div id="bulk-log" style="margin-top:12px; font-size:0.85rem; white-space: pre-wrap; color: var(--text-sec);"></div>
-                </div>
+               <div class="card" style="flex: 1; min-width: 300px; display: flex; flex-direction: column;">
+
+                   <div style="flex-shrink: 0;">
+                       <h3>Bulk Import (CSV)</h3>
+                       <p style="font-size: 0.85rem; color: var(--text-sec); margin-top:0; margin-bottom: 20px;">Format: roll_no, name, branch, image_link</p>
+                   </div>
+                   
+                   <div style="flex-grow: 1; margin: 12px 0; position: relative; min-height: 46px; display: flex; align-items: center; justify-content: center; padding: 10px; border: 1px dashed var(--border); border-radius: 8px; background: #f9fafb;">
+                       
+                       <input type="file" id="bulk-file" accept=".csv,.xlsx" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;">
+                       
+                       <label for="bulk-file" id="bulk-file-label" class="btn-outline" style="
+                           width: auto; /* Allow label to fit content */
+                           max-width: 90%;
+                           height: auto; 
+                           display: inline-flex;
+                           align-items: center;
+                           justify-content: center;
+                           cursor: pointer;
+                           font-weight: 600; /* Made text bolder */
+                           gap: 8px;
+                           padding: 10px 18px; /* Slightly adjusted padding */
+                           border-radius: 6px;
+                           font-size: 0.9rem;
+                           box-sizing: border-box;
+                           border: 1px solid var(--primary); /* Use primary color for button border */
+                           color: var(--primary); /* Use primary color for text */
+                           background: #eef2ff; /* Light primary background for contrast */
+                           transition: all 0.2s;
+                       ">
+                           <i class="ph ph-cloud-arrow-up" style="font-size: 1.2em;"></i> <span>Choose CSV/XLSX file...</span>
+                       </label>
+                   </div>
+
+                   <div style="flex-shrink: 0; margin-top: 10px;">
+                       <button class="btn-sm" style="background: #374151; width: 100%;" onclick="bulkUpload()" id="btn-bulk-import">Process CSV</button>
+                       <div id="bulk-log" style="margin-top:12px; font-size:0.85rem; white-space: pre-wrap; color: var(--text-sec);"></div>
+                   </div>
+               </div> 
             </div>
 
             <div class="card">
@@ -307,18 +307,6 @@
                     <tbody></tbody>
                 </table>
                 <div id="students-loading" style="text-align:center; padding:20px; display:none; color:var(--text-sec);">Fetching students...</div>
-            </div>
-        </div>
-
-        <div id="view-hierarchy" class="hidden">
-            <h2 style="margin-bottom: 24px;">Hierarchy Explorer</h2>
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                    <p style="margin:0">Click items to expand: Course → Branch → Students</p>
-                    <button class="btn-sm btn-outline" onclick="loadHierarchyUI()"><i class="ph ph-arrows-clockwise"></i></button>
-                </div>
-                <div id="hierarchy-container">
-                    </div>
             </div>
         </div>
 
@@ -769,99 +757,6 @@
         document.getElementById('att-active').classList.add('hidden');
         document.getElementById('att-setup').classList.remove('hidden');
         showToast("Class Ended");
-    }
-
-    // --- HIERARCHY VIEW ---
-    async function loadHierarchyUI() {
-        const container = document.getElementById('hierarchy-container');
-        container.innerHTML = `<div style="text-align:center; padding:20px;"><div class="spinner" style="display:inline-block; border-color:#666; border-top-color:transparent;"></div> Building Tree...</div>`;
-
-        const courses = await apiCall('/api/courses');
-        
-        if(!courses || courses.length === 0) { 
-            container.innerHTML = `<div style="text-align:center; padding:20px; color:#999">No data found.</div>`; 
-            return; 
-        }
-        
-        container.innerHTML = "";
-
-        for (const c of courses) {
-            const courseDiv = document.createElement('div');
-            courseDiv.className = 'tree-node';
-            
-            const header = document.createElement('div');
-            header.className = 'tree-header';
-            header.innerHTML = `<span>📘 ${c.name}</span><span>⬇</span>`;
-            
-            const children = document.createElement('div');
-            children.className = 'tree-children';
-            children.innerHTML = `<div style="padding:10px; color:#999; font-size:0.85rem;">Loading students...</div>`;
-
-            // Toggle logic
-            er.onclick = async () => {
-                const isHidden = children.style.display === 'none' || children.style.display === '';
-                if(isHidden) {
-                    children.style.display = 'block';
-                    header.querySelector('span:last-child').innerText = '⬆';
-                    
-                    // Lazy load if not already loaded
-                    if(children.innerHTML.includes('Loading')) {
-                        const enrolled = await apiCall(`/api/course_students/${id}`);
-                        children.innerHTML = ""; // Clear loader
-                        
-                        if (!enrolled || enrolled.length === 0) {
-                             children.innerHTML = `<div style="padding:10px; color:#999">No students enrolled.</div>`;
-                        } else {
-                            // Group by branch
-                            const branches = {};
-                            enrolled.forEach(s => {
-                                const b = s.branch || 'Unassigned';
-                                if(!branches[b]) branches[b] = [];
-                                branches[b].push(s);
-                            });
-
-                            Object.keys(branches).forEach(bName => {
-                                const branchDiv = document.createElement('div');
-                                branchDiv.style.marginLeft = "15px";
-                                branchDiv.style.marginTop = "5px";
-                                branchDiv.style.borderLeft = "2px solid #e5e7eb";
-                                
-                                const bHeader = document.createElement('div');
-                                bHeader.style.padding = "5px 10px";
-                                bHeader.style.cursor = "pointer";
-                                bHeader.style.fontWeight = "500";
-                                bHeader.innerHTML = `📂 ${bName} (${branches[bName].length})`;
-                                
-                                const bStunts = document.createElement('div');
-                                bStudents.style.display = "none";
-                                bStudents.style.paddingLeft = "10px";
-
-                                bHeader.onclick = (e) => {
-                                    e.stopPropagation();
-                                    const isVis = bStudents.style.display === 'block';
-                                    bStudents.style.display = isVis ? 'none' : 'block';
-                                };
-
-                                branches[bName].forEach(s => {
-                                    bStudents.innerHTML += `<div class="student-item" style="background:#fff;"><span>🎓 ${s.name}</span> <small>${s.roll_number}</small></div>`;
-                                });
-
-                                branchDiv.appendChild(bHeader);
-                                branchDiv.appendChild(bStudents);
-                                children.appendChild(branchDiv);
-                            });
-                      }
-                    }
-                } else {
-                    children.style.display = 'none';
-                    header.querySelector('span:last-child').innerText = '⬇';
-                }
-          };
-
-            courseDiv.appendChild(header);
-            courseDiv.appendChild(children);
-            container.appendChild(courseDiv);
-        }
     }
 
 </script>
